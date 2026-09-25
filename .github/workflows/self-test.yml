@@ -43,6 +43,12 @@ jobs:
       - name: actionlint
         run: actionlint -color
 
+      # actionlint does not read composite action manifests; a YAML error there
+      # only surfaces when a job loads the action.
+      - name: Every action manifest parses
+        run: |
+          for f in actions/*/action.yml; do yq '.' "$f" >/dev/null && echo "$f: ok"; done
+
       - name: zizmor
         env:
           GH_TOKEN: ${{ github.token }}

@@ -8,6 +8,10 @@ updates:
       - /actions/*
     schedule:
       interval: weekly
+    # Let a new release age a week before adopting it: a compromised action
+    # release is usually caught and yanked within days.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]

@@ -33,7 +33,7 @@ inputs:
     required: false
     default: "false"
   platforms:
-    description: Target platform. One only: a loaded, smoke-tested image is single-platform
+    description: "Target platform, exactly one: a loaded, smoke-tested image is single-platform"
     required: false
     default: linux/amd64
   taskfiles-dir:
