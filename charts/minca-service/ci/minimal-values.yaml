@@ -1,0 +1,5 @@
+# The smallest valid service: name, image and nothing else.
+name: minimal
+image:
+  repository: minca/example-service
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

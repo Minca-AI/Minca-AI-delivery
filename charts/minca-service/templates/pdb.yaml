@@ -1,0 +1,20 @@
+{{- /*
+Only for a workload that can have more than one pod. On a single replica a PDB
+either blocks every drain (minAvailable 1) or protects nothing. maxUnavailable 1,
+never minAvailable 1: an HPA workload idling at one pod would otherwise report
+disruptionsAllowed 0 and block node maintenance.
+*/ -}}
+{{- $multi := or (gt (int .Values.replicas) 1) (and .Values.autoscaling.enabled (gt (int .Values.autoscaling.maxReplicas) 1)) -}}
+{{- if $multi }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "minca-service.name" . }}
+  labels:
+    {{- include "minca-service.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "minca-service.selectorLabels" . | nindent 6 }}
+{{- end }}

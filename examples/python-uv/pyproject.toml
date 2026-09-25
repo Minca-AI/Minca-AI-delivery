@@ -1,0 +1,26 @@
+[project]
+name = "example-service"
+version = "0.1.0"
+description = "Fixture consumer of Minca-AI-delivery: exercises the python-uv fragment and image.yml"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+example-service = "example_service.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+
+[tool.pytest.ini_options]
+markers = ["integration: needs Docker", "live: needs the network"]

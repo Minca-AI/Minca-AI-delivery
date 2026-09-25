@@ -1,0 +1,122 @@
+# Reusable diff ratchet (design 5.2): runs the minca-quality-hooks guards
+# (no new suppressions, cognitive complexity, function length, duplicated
+# literals) on the files a pull request changes, against its base branch.
+#
+# The guards and their thresholds come from the repository's own
+# .pre-commit-config.yaml, so CI and the developer's pre-commit hook run the same
+# thing. A repository that has not adopted minca-quality-hooks is skipped with a
+# notice, not failed. Outside a pull request there is no diff, so nothing runs.
+name: quality-guards
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory holding .pre-commit-config.yaml (for monorepos)
+        type: string
+        default: "."
+      pool:
+        description: "Runner pool: ci | large"
+        type: string
+        default: ci
+      hooks:
+        description: Space-separated pre-commit hook ids to run when the config declares them
+        type: string
+        default: cognitive-complexity function-length dup-literal
+      runs-on-override:
+        description: For this repository's self-test only. JSON runner labels replacing the pool
+        type: string
+        default: ""
+    secrets:
+      MINCA_CI_APP_ID:
+        description: Optional. App that can read the private minca-quality-hooks repository
+        required: false
+      MINCA_CI_APP_PRIVATE_KEY:
+        description: Optional. Private key of that App
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    name: quality guards
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    timeout-minutes: 15
+    env:
+      HAS_HOOKS_APP: ${{ secrets.MINCA_CI_APP_ID != '' }}
+    steps:
+      - name: Validate pool
+        env:
+          POOL: ${{ inputs.pool }}
+        run: case "$POOL" in ci|large) ;; *) echo "::error::pool must be 'ci' or 'large'"; exit 1 ;; esac
+
+      - name: Check out the repository with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          # The ratchet compares each changed file with the base branch.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find declared guards
+        id: declared
+        working-directory: repo
+        env:
+          CONFIG: ${{ inputs.working-directory }}/.pre-commit-config.yaml
+          HOOKS: ${{ inputs.hooks }}
+        run: |
+          found=""
+          if [ -f "$CONFIG" ] && grep -q 'minca-quality-hooks' "$CONFIG"; then
+            for hook in $HOOKS; do
+              grep -Eq "^[[:space:]]*-?[[:space:]]*id:[[:space:]]*${hook}[[:space:]]*$" "$CONFIG" && found="$found $hook"
+            done
+          fi
+          if [ -z "$found" ]; then
+            echo "::notice::no minca-quality-hooks guards declared in $CONFIG; skipped"
+          fi
+          echo "hooks=${found# }" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a read token for the private hooks repository
+        id: hooks-token
+        if: steps.declared.outputs.hooks != '' && env.HAS_HOOKS_APP == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.MINCA_CI_APP_ID }}
+          private-key: ${{ secrets.MINCA_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: minca-quality-hooks
+          permission-contents: read
+
+      - name: Install uv
+        if: steps.declared.outputs.hooks != ''
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+
+      - name: Run the guards on the diff
+        if: steps.declared.outputs.hooks != ''
+        working-directory: repo
+        env:
+          HOOKS: ${{ steps.declared.outputs.hooks }}
+          CONFIG: ${{ inputs.working-directory }}/.pre-commit-config.yaml
+          BASE_REF: ${{ github.base_ref }}
+          HOOKS_TOKEN: ${{ steps.hooks-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # Scope the token to the hooks repository's clone URL only, through
+          # per-process git config: nothing is written to disk or to a remote URL.
+          if [ -n "$HOOKS_TOKEN" ]; then
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0="url.https://x-access-token:${HOOKS_TOKEN}@github.com/${OWNER}/minca-quality-hooks.insteadof"
+            export GIT_CONFIG_VALUE_0="https://github.com/${OWNER}/minca-quality-hooks"
+          fi
+          git fetch --no-tags --quiet origin "$BASE_REF"
+          status=0
+          for hook in $HOOKS; do
+            echo "::group::$hook"
+            uvx pre-commit run "$hook" --config "$CONFIG" --from-ref "origin/$BASE_REF" --to-ref HEAD || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"

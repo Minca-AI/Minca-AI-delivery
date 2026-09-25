@@ -1,0 +1,9 @@
+# actionlint configuration.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      # job.workflow_repository / job.workflow_sha are documented GitHub contexts
+      # (the reusable workflow's own repository and commit) that actionlint 1.7.12
+      # does not know yet. The workflows use them to check out their own actions
+      # and Taskfile fragments at the exact commit being run.
+      - 'property "workflow_(repository|sha)" is not defined in object type'

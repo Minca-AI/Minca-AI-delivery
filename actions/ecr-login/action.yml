@@ -1,0 +1,51 @@
+name: ecr-login
+description: >-
+  Assume an AWS role through GitHub OIDC and log Docker in to that account's ECR.
+  No access keys exist anywhere in this path: the job's OIDC token, and the trust
+  policy on the role, are the whole credential. The calling job needs
+  `permissions: id-token: write`.
+
+inputs:
+  role-arn:
+    description: IAM role to assume (normally vars.DELIVERY_ECR_ROLE_ARN)
+    required: true
+  region:
+    description: AWS region
+    required: false
+    default: us-east-1
+
+outputs:
+  registry:
+    description: The ECR registry host, e.g. <account>.dkr.ecr.<region>.amazonaws.com
+    value: ${{ steps.login.outputs.registry }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require a role
+      shell: bash
+      env:
+        ROLE_ARN: ${{ inputs.role-arn }}
+      run: |
+        if [ -z "$ROLE_ARN" ]; then
+          echo "::error::role-arn is empty. Set the organization variable DELIVERY_ECR_ROLE_ARN (see README, Onboarding)."
+          exit 1
+        fi
+
+    - name: Assume the role through OIDC
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.region }}
+        role-session-name: delivery-${{ github.run_id }}-${{ github.run_attempt }}
+        # Not masked on purpose: the registry host contains the account id, and
+        # GitHub silently drops a job output that contains a masked value, which
+        # would empty image.yml's `image` output. An account id is an identifier,
+        # not a credential; this action only runs in consumer repositories.
+        mask-aws-account-id: false
+
+    - name: Log in to ECR
+      id: login
+      uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+      with:
+        mask-password: "true"

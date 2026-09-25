@@ -1,0 +1,57 @@
+{{- /*
+Migration Job, gating the rollout (design 5.6, section 8 "Migration fails").
+
+backoffLimit 0: one non-zero exit fails the Job, the Job failure fails the sync,
+and the Deployment (wave 0) is never applied. The GS dev hook that exited 0 on
+failure and rolled pods anyway is the defect this avoids, so the command itself
+must exit non-zero on failure; the chart cannot fix a command that swallows it.
+
+It is an ArgoCD Sync hook at wave -1 rather than a PreSync hook. PreSync runs
+before the Sync phase creates the ServiceAccount and ExternalSecrets (wave -2),
+so on a first install, or when a secret is added in the same commit, a PreSync
+migration pod would wait forever on a missing Secret instead of failing. The
+guarantee is unchanged: nothing at wave 0 is applied until this Job succeeds.
+
+BeforeHookCreation (and not HookSucceeded) keeps a failed Job and its pod for
+`kubectl logs` until the next sync replaces it.
+*/ -}}
+{{- if .Values.migration.enabled }}
+{{- $name := include "minca-service.name" . -}}
+{{- if not .Values.migration.command }}
+{{- fail "migration.enabled is true but migration.command is empty" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-migrate
+  labels:
+    {{- include "minca-service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "minca-service.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      {{- include "minca-service.podCommon" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ include "minca-service.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with (include "minca-service.command" .Values.migration | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with (include "minca-service.env" . | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- include "minca-service.containerSecurityContext" . | nindent 10 }}
+          {{- include "minca-service.tmpMount" . | nindent 10 }}
+{{- end }}

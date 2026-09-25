@@ -1,0 +1,59 @@
+suite: migration job
+templates:
+  - migration-job.yaml
+values:
+  - ../ci/minimal-values.yaml
+tests:
+  - it: is disabled by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: fails the sync on the first failure
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+
+  - it: gates the Deployment as an ArgoCD hook that keeps a failed Job for inspection
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: Sync
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook-delete-policy"]
+          value: BeforeHookCreation
+
+  - it: runs the same image by digest and the same hardening as the service
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: minca/example-service@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["svc", "migrate"]
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: refuses to enable a migration without a command
+    set:
+      migration.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: migration.enabled is true but migration.command is empty

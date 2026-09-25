@@ -1,0 +1,36 @@
+# Fixture exercising every optional feature. Rendered by self-test and checked with
+# kubeconform; the values are illustrative, not a real service.
+name: codifier
+image:
+  registry: 111111111111.dkr.ecr.us-east-1.amazonaws.com
+  repository: minca/example-service
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+command: ["example-service"]
+args: ["serve"]
+env:
+  LOG_LEVEL: info
+  WORKERS: 2
+secrets:
+  - name: DATABASE_URL
+    from: example/dev/codifier
+    key: database_url
+  - name: REDIS_URL
+    from: example/dev/codifier
+    key: redis_url
+serviceAccount:
+  roleArn: arn:aws:iam::111111111111:role/example-dev-codifier
+migration:
+  enabled: true
+  command: ["example-service", "migrate"]
+ingress:
+  enabled: true
+  host: codifier.example.internal
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+security:
+  runAsUser: 10001
+  fsGroup: 10001

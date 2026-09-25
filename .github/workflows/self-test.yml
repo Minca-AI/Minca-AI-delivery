@@ -1,0 +1,183 @@
+# This repository's own CI.
+#
+# PUBLIC REPOSITORY RULE: every job here runs on GitHub-hosted `ubuntu-latest`.
+# A pull request from a fork runs this file, so a self-hosted label here would
+# hand our AWS-connected runners to anyone who opens a PR. The reusable
+# workflows default to the self-hosted pools; the fixtures below redirect them
+# with `runs-on-override`, which exists for this file only.
+#
+# The fixture consumers are the characterization tests of the published v1
+# contract: they call the workflows from THIS commit (`uses: ./...`) exactly the
+# way a service repository calls them from @v1, in the mode that needs no AWS
+# (build and smoke, push false).
+name: self-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  static:
+    name: actionlint, zizmor, shellcheck, fragments
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        run: >-
+          bash .github/scripts/install-tool.sh actionlint
+          https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+      - name: actionlint
+        run: actionlint -color
+
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run zizmor==1.30.1 --min-severity low .
+
+      - name: shellcheck
+        run: shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh
+
+      - name: Install go-task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.53.1
+
+      - name: Every Taskfile fragment parses and defines the contract targets
+        run: |
+          for fragment in taskfiles/*.yml; do
+            names="$(task --taskfile "$fragment" --list-all --json | jq -r '.tasks[].name')"
+            for target in setup lint typecheck arch test test:integration image:smoke; do
+              grep -qxF "$target" <<<"$names" || { echo "::error::$fragment lacks $target"; exit 1; }
+            done
+            echo "$fragment: ok"
+          done
+
+  chart:
+    name: chart (lint, unittest, kubeconform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.22.0
+
+      - name: Install helm-unittest and kubeconform
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.2
+          bash .github/scripts/install-tool.sh kubeconform \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+
+      - name: Check the chart
+        run: bash .github/scripts/chart-check.sh
+
+  bump-pin:
+    name: bump-pin unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Ensure yq
+        run: bash actions/bump-pin/install-yq.sh
+      - name: Run
+        run: bash tests/bump-pin/test_bump_pin.sh
+
+  ci-python-uv:
+    uses: ./.github/workflows/ci.yml
+    with:
+      toolchain: python-uv
+      working-directory: examples/python-uv
+      runs-on-override: '["ubuntu-latest"]'
+
+  ci-go:
+    uses: ./.github/workflows/ci.yml
+    with:
+      toolchain: go
+      working-directory: examples/go
+      runs-on-override: '["ubuntu-latest"]'
+
+  ci-node:
+    uses: ./.github/workflows/ci.yml
+    with:
+      toolchain: node
+      working-directory: examples/node
+      runs-on-override: '["ubuntu-latest"]'
+
+  # image.yml's job requests id-token: write (it needs it to push from a service
+  # repository), and a called job cannot hold more than its caller grants. Nothing
+  # here can use it: push is false and no AWS role trusts this repository.
+  image-python-uv:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/image.yml
+    with:
+      image-name: delivery-fixture-python-uv
+      working-directory: examples/python-uv
+      push: false
+      runs-on-override: '["ubuntu-latest"]'
+
+  image-go:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/image.yml
+    with:
+      image-name: delivery-fixture-go
+      working-directory: examples/go
+      push: false
+      runs-on-override: '["ubuntu-latest"]'
+
+  image-node:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/image.yml
+    with:
+      image-name: delivery-fixture-node
+      working-directory: examples/node
+      push: false
+      runs-on-override: '["ubuntu-latest"]'
+
+  quality-guards:
+    uses: ./.github/workflows/quality-guards.yml
+    with:
+      runs-on-override: '["ubuntu-latest"]'
+
+  image-outputs:
+    name: image.yml outputs follow the contract
+    needs: [image-python-uv]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check image and tag
+        env:
+          IMAGE: ${{ needs.image-python-uv.outputs.image }}
+          TAG: ${{ needs.image-python-uv.outputs.tag }}
+          DIGEST: ${{ needs.image-python-uv.outputs.digest }}
+        run: |
+          [[ "$IMAGE" == */minca/delivery-fixture-python-uv ]] || { echo "::error::image=$IMAGE"; exit 1; }
+          [[ "$TAG" =~ ^sha-[0-9a-f]{40}$ ]] || { echo "::error::tag=$TAG"; exit 1; }
+          [ -z "$DIGEST" ] || { echo "::error::digest must be empty when nothing is pushed"; exit 1; }
+          echo "image=$IMAGE tag=$TAG"

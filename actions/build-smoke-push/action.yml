@@ -1,0 +1,114 @@
+name: build-smoke-push
+description: >-
+  Build an image, load it into the runner's Docker, prove it starts with
+  `task image:smoke`, and only then push those same bytes. What reaches the
+  registry is the artifact that passed the smoke test, never a second build.
+  Needs `task` on PATH when smoke is true, and a prior ECR login when push is true.
+
+inputs:
+  image:
+    description: Image repository reference without tag, e.g. <registry>/minca/<name>
+    required: true
+  tag:
+    description: Tag to build and push, e.g. sha-<40-char git sha>
+    required: true
+  dockerfile:
+    description: Dockerfile path, relative to working-directory
+    required: false
+    default: Dockerfile
+  context:
+    description: Build context, relative to working-directory
+    required: false
+    default: "."
+  working-directory:
+    description: Directory holding the Taskfile (and the base for dockerfile and context)
+    required: false
+    default: "."
+  smoke:
+    description: Run `task image:smoke` against the loaded image before pushing
+    required: false
+    default: "true"
+  push:
+    description: Push the image after a successful smoke test
+    required: false
+    default: "false"
+  platforms:
+    description: Target platform. One only: a loaded, smoke-tested image is single-platform
+    required: false
+    default: linux/amd64
+  taskfiles-dir:
+    description: Absolute path exported as DELIVERY_TASKFILES for the consumer Taskfile
+    required: false
+    default: ""
+
+outputs:
+  digest:
+    description: Registry digest of the pushed image (sha256:...); empty when not pushed
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        PLATFORMS: ${{ inputs.platforms }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        case "$PLATFORMS" in
+          *,*) echo "::error::platforms must name one platform in v1: load + smoke tests a single-platform image"; exit 1 ;;
+        esac
+        if ! printf '%s' "$TAG" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+          echo "::error::'$TAG' is not a valid image tag"; exit 1
+        fi
+
+    - name: Set up Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Build and load
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ${{ inputs.working-directory }}/${{ inputs.context }}
+        file: ${{ inputs.working-directory }}/${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
+        tags: ${{ inputs.image }}:${{ inputs.tag }}
+        load: true
+        push: false
+        provenance: false
+        cache-from: type=gha,scope=${{ inputs.image }}
+        cache-to: ${{ inputs.push == 'true' && format('type=gha,mode=max,scope={0}', inputs.image) || '' }}
+
+    - name: Smoke test the loaded image
+      if: inputs.smoke == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        IMAGE: ${{ inputs.image }}:${{ inputs.tag }}
+        DELIVERY_TASKFILES: ${{ inputs.taskfiles-dir }}
+      run: task image:smoke
+
+    - name: Push the tested image
+      id: push
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        REF: ${{ inputs.image }}:${{ inputs.tag }}
+        REPO: ${{ inputs.image }}
+      run: |
+        docker push "$REF"
+        # RepoDigests is set by the push itself; it is the manifest digest the
+        # registry now serves for this tag, which is what the chart deploys.
+        digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REF" \
+          | grep -F "${REPO}@" | head -n1 | cut -d@ -f2)"
+        if [ -z "$digest" ]; then
+          echo "::error::could not read the pushed digest of $REF"; exit 1
+        fi
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+        echo "Pushed $REF ($digest)"
+
+    - name: Remove the local image
+      if: always()
+      shell: bash
+      env:
+        REF: ${{ inputs.image }}:${{ inputs.tag }}
+      run: docker image rm "$REF" >/dev/null 2>&1 || true

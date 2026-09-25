@@ -1,0 +1,130 @@
+# Reusable image build (design 5.2, 5.4): build, load, `task image:smoke`, then
+# push the same bytes to ECR as `sha-<full git sha>`.
+#
+# A pull request builds and smoke-tests but never pushes, so a Dockerfile that
+# does not build is caught before the merge while a fork can never reach AWS.
+#
+# Configuration is organization (or repository) variables, never inputs holding
+# account ids: DELIVERY_ECR_REGISTRY, DELIVERY_ECR_ROLE_ARN, DELIVERY_AWS_REGION.
+name: image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: ECR repository name under minca/. Default is the repository name, lowercased
+        type: string
+        default: ""
+      dockerfile:
+        description: Dockerfile path, relative to working-directory
+        type: string
+        default: Dockerfile
+      context:
+        description: Build context, relative to working-directory
+        type: string
+        default: "."
+      working-directory:
+        description: Project directory holding the Taskfile (for monorepos)
+        type: string
+        default: "."
+      smoke:
+        description: Run `task image:smoke` against the loaded image before pushing
+        type: boolean
+        default: true
+      push:
+        description: Push after a green smoke test. A pull_request run never pushes, whatever this says
+        type: boolean
+        default: true
+      platforms:
+        description: Target platform (one; Fargate is linux/amd64)
+        type: string
+        default: linux/amd64
+      pool:
+        description: "Runner pool: ci | large"
+        type: string
+        default: ci
+      runs-on-override:
+        description: For this repository's self-test only. JSON runner labels replacing the pool
+        type: string
+        default: ""
+    outputs:
+      image:
+        description: Image repository, e.g. <registry>/minca/<name>
+        value: ${{ jobs.build.outputs.image }}
+      tag:
+        description: sha-<40-char git sha>
+        value: ${{ jobs.build.outputs.tag }}
+      digest:
+        description: sha256:... of the pushed image; empty when nothing was pushed
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build, smoke, push
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    # The self-hosted fleet reaps runners after 30 minutes (design R2).
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # Mints the OIDC token exchanged for a short AWS session. The role's trust
+      # policy, not this line, decides which refs may push.
+      id-token: write
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+      tag: ${{ steps.plan.outputs.tag }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+
+      - name: Check out Minca-AI-delivery at this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: delivery
+          persist-credentials: false
+
+      - name: Plan the build
+        id: plan
+        env:
+          POOL: ${{ inputs.pool }}
+          PUSH_INPUT: ${{ inputs.push }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          EVENT: ${{ github.event_name }}
+          REGISTRY: ${{ vars.DELIVERY_ECR_REGISTRY }}
+          ROLE_ARN: ${{ vars.DELIVERY_ECR_ROLE_ARN }}
+        run: bash delivery/.github/scripts/plan-image.sh
+
+      - name: Install go-task
+        if: inputs.smoke
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.53.1
+
+      - name: Log in to ECR
+        if: steps.plan.outputs.push == 'true'
+        uses: ./delivery/actions/ecr-login
+        with:
+          role-arn: ${{ vars.DELIVERY_ECR_ROLE_ARN }}
+          region: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
+
+      - name: Build, smoke, push
+        id: build
+        uses: ./delivery/actions/build-smoke-push
+        with:
+          image: ${{ steps.plan.outputs.image }}
+          tag: ${{ steps.plan.outputs.tag }}
+          dockerfile: ${{ inputs.dockerfile }}
+          context: ${{ inputs.context }}
+          working-directory: repo/${{ inputs.working-directory }}
+          smoke: ${{ inputs.smoke }}
+          push: ${{ steps.plan.outputs.push }}
+          platforms: ${{ inputs.platforms }}
+          taskfiles-dir: ${{ github.workspace }}/delivery/taskfiles

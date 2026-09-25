@@ -1,0 +1,40 @@
+# Release: a tag vX.Y.Z moves the major tag vX onto the same commit, so a
+# consumer pinned to @v1 receives every compatible fix (design section 11).
+#
+# Runs on GitHub-hosted runners only: this repository is public, and nothing
+# triggered from it may ever reach the self-hosted fleet.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+jobs:
+  move-major:
+    name: move the major tag
+    # Forks carry the workflow too; only the canonical repository releases.
+    if: github.repository == 'Minca-AI/Minca-AI-delivery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Move vX to this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG is not a vX.Y.Z release tag"; exit 1
+          fi
+          major="v${BASH_REMATCH[1]}"
+          if gh api "repos/$REPO/git/ref/tags/$major" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/$major" -f sha="$SHA" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$major" -f sha="$SHA" >/dev/null
+          fi
+          echo "$major -> $SHA ($TAG)"

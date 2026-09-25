@@ -1,0 +1,107 @@
+# minca-service values. This file is the per-service contract (design section 5.6);
+# values.schema.json enforces it. Every default below is safe for a real cluster:
+# a service that sets only name, image and its env gets a hardened workload.
+
+# Object name for the Deployment, Service, ServiceAccount and every child object.
+name: ""
+
+image:
+  # Optional registry host, e.g. <account>.dkr.ecr.<region>.amazonaws.com. Kept
+  # separate so a deploy repo can copy `image:` from pins.yaml verbatim.
+  registry: ""
+  repository: ""
+  # Rendered as repository@digest. The tag is for humans; the digest is what runs.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# Optional overrides of the image ENTRYPOINT / CMD.
+command: []
+args: []
+
+# Empty list = a worker: no Service and no HTTP probes.
+ports:
+  - name: http
+    containerPort: 8000
+
+replicas: 1
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+# Plain configuration, rendered as literal env vars.
+env: {}
+
+# One ExternalSecret per entry. Each produces a Secret <name>-<lowercased entry name>
+# holding one key, injected as env var `name`.
+secrets: []
+#  - name: DATABASE_URL
+#    from: <client>/<env>/<service>   # Secrets Manager secret name
+#    key: database_url                # JSON property inside that secret
+
+secretStore:
+  # The ClusterSecretStore the platform installs next to external-secrets.
+  kind: ClusterSecretStore
+  name: aws-secrets-manager
+  refreshInterval: 1h
+
+serviceAccount:
+  # IRSA role for this service only. Empty = no AWS identity.
+  roleArn: ""
+
+probes:
+  # HTTP paths on the port named below. Set a path to "" to drop that probe.
+  liveness: /healthz
+  readiness: /readyz
+  port: http
+  # Fargate cold starts take 30-60 s; the startup probe absorbs that so liveness
+  # never kills a pod that is still booting.
+  startupFailureThreshold: 30
+
+migration:
+  # When enabled, a Job runs `command` with this image, env and secrets before the
+  # Deployment is applied. It must exit non-zero on failure: backoffLimit is 0, so
+  # one failure fails the ArgoCD sync and the Deployment is never rolled.
+  enabled: false
+  command: []
+  args: []
+  activeDeadlineSeconds: 900
+
+ingress:
+  enabled: false
+  className: alb
+  annotations: {}
+  host: ""
+  path: /
+  pathType: Prefix
+  port: http
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+security:
+  # Hardened by default (design 5.6). Opt out per service only with a reason.
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  # Kubernetes can only verify runAsNonRoot against a NUMERIC image user. Set this
+  # when the image declares USER by name.
+  runAsUser: null
+  fsGroup: null
+
+# A writable /tmp backed by an emptyDir, so readOnlyRootFilesystem does not break
+# libraries that write temp files. sizeLimit bounds it against the node's disk.
+tmp:
+  sizeLimit: 256Mi
+
+terminationGracePeriodSeconds: 30
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,166 @@
+# Reusable CI: runs the repository's own task targets (design 5.1, 5.2).
+#
+# One job per target so a pull request shows exactly which check failed. The
+# workflow defines no checks of its own: every job is `task <target>`, which a
+# developer can run locally with the same result.
+#
+# Layout on the runner: the caller repository is checked out at `repo/`, this
+# repository (at the exact commit of this workflow) at `delivery/`. Keeping them
+# side by side, never nested, stops the caller's linters and test collectors
+# from walking into our files.
+name: ci
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: "python-uv | python-poetry | go | node"
+        type: string
+        required: true
+      toolchain-version:
+        description: Language version override; empty reads .python-version, go.mod or .nvmrc
+        type: string
+        default: ""
+      working-directory:
+        description: Project directory inside the repository (for monorepos)
+        type: string
+        default: "."
+      pool:
+        description: "Runner pool: ci -> [self-hosted, ci], large -> [self-hosted, large]"
+        type: string
+        default: ci
+      targets:
+        description: Space-separated task targets. Missing optional targets are skipped; missing required ones (lint typecheck test) fail
+        type: string
+        default: lint typecheck arch test
+      integration:
+        description: Also run test:integration on the large pool
+        type: boolean
+        default: false
+      runs-on-override:
+        description: For this repository's self-test only. JSON runner labels replacing the pool
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    timeout-minutes: 10
+    outputs:
+      runner: ${{ steps.runner.outputs.runner }}
+      large-runner: ${{ steps.runner.outputs.large }}
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - name: Resolve runners
+        id: runner
+        env:
+          POOL: ${{ inputs.pool }}
+          OVERRIDE: ${{ inputs.runs-on-override }}
+        run: |
+          # The pool is the only runner selector. The fleet matches label sets
+          # exactly, so a free-form label would queue forever instead of failing.
+          case "$POOL" in
+            ci|large) ;;
+            *) echo "::error::pool must be 'ci' or 'large' (got '$POOL')"; exit 1 ;;
+          esac
+          if [ -n "$OVERRIDE" ]; then
+            echo "runner=$OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "large=$OVERRIDE" >> "$GITHUB_OUTPUT"
+          else
+            echo "runner=[\"self-hosted\",\"$POOL\"]" >> "$GITHUB_OUTPUT"
+            echo 'large=["self-hosted","large"]' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+
+      - name: Check out Minca-AI-delivery at this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: delivery
+          persist-credentials: false
+
+      - name: Install go-task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.53.1
+
+      - name: Select targets
+        id: targets
+        working-directory: repo/${{ inputs.working-directory }}
+        env:
+          TARGETS: ${{ inputs.targets }}
+          DELIVERY_TASKFILES: ${{ github.workspace }}/delivery/taskfiles
+        run: bash "$GITHUB_WORKSPACE/delivery/.github/scripts/select-targets.sh"
+
+  target:
+    name: ${{ matrix.target }}
+    needs: plan
+    if: needs.plan.outputs.targets != '[]'
+    runs-on: ${{ fromJSON(needs.plan.outputs.runner) }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+    steps:
+      - &checkout-repo
+        name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+      - &checkout-delivery
+        name: Check out Minca-AI-delivery at this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: delivery
+          persist-credentials: false
+      - &setup
+        name: Set up the toolchain
+        uses: ./delivery/actions/setup-toolchain
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          version: ${{ inputs.toolchain-version }}
+          working-directory: repo/${{ inputs.working-directory }}
+      - &task-setup
+        name: task setup
+        working-directory: repo/${{ inputs.working-directory }}
+        env:
+          DELIVERY_TASKFILES: ${{ github.workspace }}/delivery/taskfiles
+        run: task setup
+      - name: task ${{ matrix.target }}
+        working-directory: repo/${{ inputs.working-directory }}
+        env:
+          DELIVERY_TASKFILES: ${{ github.workspace }}/delivery/taskfiles
+          TARGET: ${{ matrix.target }}
+        run: task "$TARGET"
+
+  integration:
+    name: test:integration
+    needs: plan
+    if: inputs.integration
+    # Integration lanes need Docker and more memory: always the large pool.
+    runs-on: ${{ fromJSON(needs.plan.outputs.large-runner) }}
+    timeout-minutes: 30
+    steps:
+      - *checkout-repo
+      - *checkout-delivery
+      - *setup
+      - *task-setup
+      - name: task test:integration
+        working-directory: repo/${{ inputs.working-directory }}
+        env:
+          DELIVERY_TASKFILES: ${{ github.workspace }}/delivery/taskfiles
+        run: task test:integration

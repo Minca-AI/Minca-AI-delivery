@@ -1,0 +1,172 @@
+# Reusable promotion (design 5.2, 5.5, 6.1): pin an image in a client's deploy
+# repository, which is what ArgoCD deploys.
+#
+#   1. verify the tag exists in ECR and resolves to the given digest
+#   2. write pins.yaml and land it (commit for dev, pull request for prod),
+#      retrying up to 5 times with rebase when another promotion races it
+#   3. commit mode only: move <client>-<env>-live onto the digest
+#
+# Secrets arrive only through `secrets: inherit` in the caller. The GitHub App
+# token is minted here, scoped to the one deploy repository, and lives for this job.
+name: promote
+
+on:
+  workflow_call:
+    inputs:
+      deploy-repo:
+        description: Deploy repository, e.g. Minca-AI/Minca-AI-deploy-GNP
+        type: string
+        required: true
+      environment:
+        description: Environment directory in the deploy repository, e.g. dev
+        type: string
+        required: true
+      service:
+        description: Key under `services:` in pins.yaml
+        type: string
+        required: true
+      tag:
+        description: image.yml output `tag`
+        type: string
+        required: true
+      digest:
+        description: image.yml output `digest`
+        type: string
+        required: true
+      mode:
+        description: "commit (dev) | pull-request (prod)"
+        type: string
+        default: commit
+      image-name:
+        description: ECR repository name under minca/. Default is the calling repository's name, lowercased (same as image.yml)
+        type: string
+        default: ""
+      client:
+        description: Client in the live tag <client>-<env>-live. Default is derived from Minca-AI-deploy-<CLIENT>
+        type: string
+        default: ""
+      pins-path:
+        description: pins.yaml path. Default environments/<environment>/pins.yaml
+        type: string
+        default: ""
+      base-branch:
+        description: Branch of the deploy repository that holds the pins
+        type: string
+        default: main
+      pool:
+        description: "Runner pool: ci | large"
+        type: string
+        default: ci
+    secrets:
+      DELIVERY_APP_ID:
+        description: The Minca Delivery GitHub App id
+        required: true
+      DELIVERY_APP_PRIVATE_KEY:
+        description: The Minca Delivery GitHub App private key
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: promote ${{ inputs.service }} to ${{ inputs.environment }}
+    runs-on: ${{ inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]') }}
+    timeout-minutes: 10
+    # One promotion per service and environment at a time, so the live tag moves
+    # in the same order as the pins. A newer pending promotion of the same service
+    # replaces an older pending one, which is the outcome anyway. Different
+    # services never wait on each other; bump-pin resolves their races.
+    concurrency:
+      group: promote-${{ inputs.deploy-repo }}-${{ inputs.environment }}-${{ inputs.service }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Resolve the promotion
+        id: plan
+        env:
+          POOL: ${{ inputs.pool }}
+          MODE: ${{ inputs.mode }}
+          DEPLOY_REPO: ${{ inputs.deploy-repo }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          CLIENT: ${{ inputs.client }}
+          PINS_PATH: ${{ inputs.pins-path }}
+        run: |
+          case "$POOL" in ci|large) ;; *) echo "::error::pool must be 'ci' or 'large'"; exit 1 ;; esac
+          case "$MODE" in commit|pull-request) ;; *) echo "::error::mode must be commit or pull-request"; exit 1 ;; esac
+          [[ "$DEPLOY_REPO" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || { echo "::error::deploy-repo must be owner/name"; exit 1; }
+          [[ "$ENVIRONMENT" =~ ^[a-z0-9-]+$ ]] || { echo "::error::invalid environment '$ENVIRONMENT'"; exit 1; }
+          name="${IMAGE_NAME:-${GITHUB_REPOSITORY#*/}}"
+          name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+          repo_name="${DEPLOY_REPO#*/}"
+          if [ -z "$CLIENT" ]; then
+            [[ "$repo_name" == Minca-AI-deploy-* ]] || { echo "::error::cannot derive client from $repo_name; pass input client"; exit 1; }
+            CLIENT="${repo_name#Minca-AI-deploy-}"
+          fi
+          CLIENT="$(printf '%s' "$CLIENT" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "repository=minca/${name}"
+            echo "repo-name=${repo_name}"
+            echo "owner=${DEPLOY_REPO%%/*}"
+            echo "live-tag=${CLIENT}-${ENVIRONMENT}-live"
+            echo "pins-path=${PINS_PATH:-environments/${ENVIRONMENT}/pins.yaml}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out Minca-AI-delivery at this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: delivery
+          persist-credentials: false
+
+      - name: Log in to AWS
+        uses: ./delivery/actions/ecr-login
+        with:
+          role-arn: ${{ vars.DELIVERY_ECR_ROLE_ARN }}
+          region: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
+
+      - name: Verify the image exists in ECR
+        env:
+          REPOSITORY: ${{ steps.plan.outputs.repository }}
+          TAG: ${{ inputs.tag }}
+          DIGEST: ${{ inputs.digest }}
+        run: bash delivery/.github/scripts/promote-ecr.sh verify
+
+      - name: Mint a token for the deploy repository
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.DELIVERY_APP_ID }}
+          private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}
+          owner: ${{ steps.plan.outputs.owner }}
+          repositories: ${{ steps.plan.outputs.repo-name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Pin the image
+        uses: ./delivery/actions/bump-pin
+        with:
+          repo: ${{ inputs.deploy-repo }}
+          path: ${{ steps.plan.outputs.pins-path }}
+          service: ${{ inputs.service }}
+          image: ${{ steps.plan.outputs.repository }}
+          tag: ${{ inputs.tag }}
+          digest: ${{ inputs.digest }}
+          environment: ${{ inputs.environment }}
+          mode: ${{ inputs.mode }}
+          base-branch: ${{ inputs.base-branch }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      # Only a committed pin is live. In pull-request mode the tag moves when the
+      # pin is merged, which is the deploy repository's job, not this one's.
+      - name: Move the live tag
+        if: inputs.mode == 'commit'
+        env:
+          REPOSITORY: ${{ steps.plan.outputs.repository }}
+          DIGEST: ${{ inputs.digest }}
+          LIVE_TAG: ${{ steps.plan.outputs.live-tag }}
+        run: bash delivery/.github/scripts/promote-ecr.sh move-live

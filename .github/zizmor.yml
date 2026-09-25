@@ -1,0 +1,11 @@
+# zizmor configuration.
+rules:
+  self-repository:
+    # The `$/` self-repository syntax needs runner 2.336.0+, and the self-hosted
+    # fleet's runner version is not guaranteed. The reusable workflows check this
+    # repository out at job.workflow_sha anyway (they also need its Taskfile
+    # fragments and scripts), so `./delivery/actions/...` already resolves to the
+    # exact commit being run. The self-test calls `./.github/workflows/...` on
+    # purpose, to exercise the same local files. Revisit once the fleet is on
+    # 2.336.0+ everywhere.
+    disable: true
