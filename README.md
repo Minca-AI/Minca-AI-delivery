@@ -201,6 +201,18 @@ ArgoCD config management plugin running `sops -d` then `helm template`); this ch
 never sees the ciphertext. External Secrets Operator stays available but off by
 default: one ExternalSecret per `secrets[]` entry, injected with `secretKeyRef`.
 
+Persistence (1.2.0+): off by default. When enabled, the Deployment's container
+mounts an existing PersistentVolumeClaim; the migration Job never does. The claim
+and its PersistentVolume belong to the deploy repository (for example a static EFS
+volume), so the chart creates no storage objects.
+
+| Value | Type | Default | Purpose |
+|---|---|---|---|
+| `persistence.enabled` | boolean | `false` | Mount the claim into the Deployment |
+| `persistence.existingClaim` | string | `""` | PVC name in the release namespace; required when enabled |
+| `persistence.mountPath` | string | `""` | Absolute path in the container; required when enabled |
+| `persistence.subPath` | string | `""` | Optional sub-directory of the volume to mount |
+
 Sync ordering under ArgoCD: ServiceAccount, the env ConfigMap/Secret and any
 ExternalSecrets at wave -2, the
 migration Job (a `Sync` hook, `backoffLimit: 0`) at wave -1, everything else at

@@ -74,3 +74,18 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: migration.enabled is true but migration.command is empty
+
+  - it: never mounts the persistence claim into the migration Job
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+      persistence.enabled: true
+      persistence.existingClaim: example-cases
+      persistence.mountPath: /data/cases
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 1
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 1

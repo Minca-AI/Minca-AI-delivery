@@ -43,6 +43,7 @@ spec:
         {{- end }}
     spec:
       {{- include "minca-service.podCommon" . | nindent 6 }}
+      {{- include "minca-service.volumes" (dict "root" . "persistent" true) | nindent 6 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       containers:
         - name: {{ $name }}
@@ -65,4 +66,4 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- include "minca-service.containerSecurityContext" . | nindent 10 }}
-          {{- include "minca-service.tmpMount" . | nindent 10 }}
+          {{- include "minca-service.volumeMounts" (dict "root" . "persistent" true) | nindent 10 }}

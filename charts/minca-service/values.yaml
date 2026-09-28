@@ -108,6 +108,15 @@ security:
 tmp:
   sizeLimit: 256Mi
 
+# Optional durable storage (1.2.0+): mounts an existing PersistentVolumeClaim into
+# the Deployment's container only (never the migration Job). The claim and its
+# volume are owned by the deploy repository, not by this chart.
+persistence:
+  enabled: false
+  existingClaim: ""
+  mountPath: ""
+  subPath: ""
+
 terminationGracePeriodSeconds: 30
 podAnnotations: {}
 podLabels: {}

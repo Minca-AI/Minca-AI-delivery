@@ -153,3 +153,67 @@ tests:
     asserts:
       - notExists:
           path: spec.replicas
+
+  - it: mounts no persistent volume by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: persistence
+          any: true
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 1
+
+  - it: mounts the existing claim at the mount path when persistence is enabled
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: example-cases
+      persistence.mountPath: /data/cases
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: persistence
+            persistentVolumeClaim:
+              claimName: example-cases
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: persistence
+            mountPath: /data/cases
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: passes subPath through when set
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: example-cases
+      persistence.mountPath: /data/cases
+      persistence.subPath: cases
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: persistence
+            mountPath: /data/cases
+            subPath: cases
+
+  - it: refuses persistence without a claim
+    set:
+      persistence.enabled: true
+      persistence.mountPath: /data/cases
+    asserts:
+      - failedTemplate:
+          errorMessage: "values.persistence.existingClaim is required when persistence.enabled"
+
+  - it: refuses persistence without a mount path
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: example-cases
+    asserts:
+      - failedTemplate:
+          errorMessage: "values.persistence.mountPath is required when persistence.enabled"
