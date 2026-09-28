@@ -36,3 +36,7 @@ autoscaling:
 security:
   runAsUser: 10001
   fsGroup: 10001
+persistence:
+  enabled: true
+  existingClaim: codifier-data
+  mountPath: /data

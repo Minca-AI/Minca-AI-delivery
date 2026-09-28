@@ -113,17 +113,46 @@ args:
 {{- end }}
 {{- end -}}
 
-{{- define "minca-service.tmpMount" -}}
+{{/*
+Volumes and mounts. Both take a dict: "root" is the chart context, "persistent" is
+true only for the Deployment, so the optional persistence claim is never mounted
+by the migration Job.
+*/}}
+{{- define "minca-service.persistenceOn" -}}
+{{- if and .persistent .root.Values.persistence.enabled -}}
+{{- if not .root.Values.persistence.existingClaim -}}
+{{- fail "values.persistence.existingClaim is required when persistence.enabled" -}}
+{{- end -}}
+{{- if not .root.Values.persistence.mountPath -}}
+{{- fail "values.persistence.mountPath is required when persistence.enabled" -}}
+{{- end -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "minca-service.volumeMounts" -}}
 volumeMounts:
   - name: tmp
     mountPath: /tmp
+{{- if include "minca-service.persistenceOn" . }}
+  - name: persistence
+    mountPath: {{ .root.Values.persistence.mountPath }}
+    {{- with .root.Values.persistence.subPath }}
+    subPath: {{ . }}
+    {{- end }}
+{{- end }}
 {{- end -}}
 
-{{- define "minca-service.tmpVolume" -}}
+{{- define "minca-service.volumes" -}}
 volumes:
   - name: tmp
     emptyDir:
-      sizeLimit: {{ .Values.tmp.sizeLimit }}
+      sizeLimit: {{ .root.Values.tmp.sizeLimit }}
+{{- if include "minca-service.persistenceOn" . }}
+  - name: persistence
+    persistentVolumeClaim:
+      claimName: {{ .root.Values.persistence.existingClaim }}
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -148,5 +177,4 @@ tolerations:
 affinity:
   {{- toYaml . | nindent 2 }}
 {{- end }}
-{{ include "minca-service.tmpVolume" . }}
 {{- end -}}

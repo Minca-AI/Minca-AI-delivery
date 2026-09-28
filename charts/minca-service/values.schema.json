@@ -136,6 +136,19 @@
         "sizeLimit": {"type": "string"}
       }
     },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "existingClaim": {
+          "type": "string",
+          "pattern": "^([a-z0-9]([-.a-z0-9]*[a-z0-9])?)?$"
+        },
+        "mountPath": {"type": "string", "pattern": "^(/.*)?$"},
+        "subPath": {"type": "string"}
+      }
+    },
     "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
     "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}},
     "podLabels": {"type": "object", "additionalProperties": {"type": "string"}},
