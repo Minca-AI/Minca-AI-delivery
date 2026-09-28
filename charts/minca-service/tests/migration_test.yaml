@@ -51,6 +51,23 @@ tests:
           path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
           value: true
 
+  - it: reads the same env and secretEnv as the service
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+      env:
+        LOG_LEVEL: info
+      secretEnv:
+        DATABASE_URL: postgresql://example
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - configMapRef:
+                name: minimal-env
+            - secretRef:
+                name: minimal-env
+
   - it: refuses to enable a migration without a command
     set:
       migration.enabled: true
