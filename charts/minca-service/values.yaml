@@ -32,18 +32,27 @@ resources:
   limits:
     memory: 1Gi
 
-# Plain configuration, rendered as literal env vars.
+# Plain configuration: rendered as ConfigMap <name>-env, injected with envFrom.
 env: {}
 
-# One ExternalSecret per entry. Each produces a Secret <name>-<lowercased entry name>
-# holding one key, injected as env var `name`.
+# Secret configuration: rendered as Secret <name>-env, injected with envFrom after
+# `env` (a key present in both takes this value). Keep it out of plain values
+# files: the deploy repository holds it SOPS-encrypted and decrypts it at render
+# time. Keys must be valid environment variable names.
+secretEnv: {}
+#  DATABASE_URL: postgresql://...
+
+# OPTIONAL, off by default: External Secrets Operator wiring, for a cluster that
+# keeps secrets in AWS Secrets Manager instead of `secretEnv`. One ExternalSecret
+# per entry. Each produces a Secret <name>-<lowercased entry name> holding one
+# key, injected as env var `name`. Needs ESO and the store below.
 secrets: []
 #  - name: DATABASE_URL
 #    from: <client>/<env>/<service>   # Secrets Manager secret name
 #    key: database_url                # JSON property inside that secret
 
 secretStore:
-  # The ClusterSecretStore the platform installs next to external-secrets.
+  # Used only by `secrets[]`: the ClusterSecretStore installed next to external-secrets.
   kind: ClusterSecretStore
   name: aws-secrets-manager
   refreshInterval: 1h

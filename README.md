@@ -189,11 +189,20 @@ The chart renders `image@digest`. The tag is for humans.
 Values contract: [`charts/minca-service/values.yaml`](charts/minca-service/values.yaml),
 enforced by `values.schema.json`. Defaults are hardened: image by digest,
 `maxUnavailable: 0`, `runAsNonRoot`, read-only root filesystem with an emptyDir
-`/tmp`, all capabilities dropped, HTTP startup/readiness/liveness probes. One
-ExternalSecret per `secrets[]` entry; IRSA annotation from `serviceAccount.roleArn`;
-optional migration Job, Ingress, HPA and PDB.
+`/tmp`, all capabilities dropped, HTTP startup/readiness/liveness probes. IRSA
+annotation from `serviceAccount.roleArn`; optional migration Job, Ingress, HPA and PDB.
 
-Sync ordering under ArgoCD: ServiceAccount and ExternalSecrets at wave -2, the
+Environment (1.1.0+): `env` renders ConfigMap `<name>-env` and `secretEnv` renders
+Secret `<name>-env`; the Deployment and the migration Job load both with `envFrom`
+(on a duplicate key the Secret wins). The pod template carries a checksum of each,
+so a value change rolls the pods. `secretEnv` is meant to come from a SOPS-encrypted
+values file in the deploy repository, decrypted at render time (for example by an
+ArgoCD config management plugin running `sops -d` then `helm template`); this chart
+never sees the ciphertext. External Secrets Operator stays available but off by
+default: one ExternalSecret per `secrets[]` entry, injected with `secretKeyRef`.
+
+Sync ordering under ArgoCD: ServiceAccount, the env ConfigMap/Secret and any
+ExternalSecrets at wave -2, the
 migration Job (a `Sync` hook, `backoffLimit: 0`) at wave -1, everything else at
 wave 0. A failed migration fails the sync before the Deployment is touched.
 

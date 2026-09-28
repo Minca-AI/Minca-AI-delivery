@@ -10,6 +10,8 @@ args: ["serve"]
 env:
   LOG_LEVEL: info
   WORKERS: 2
+secretEnv:
+  OPENAI_API_KEY: example-not-a-real-key
 secrets:
   - name: DATABASE_URL
     from: example/dev/codifier

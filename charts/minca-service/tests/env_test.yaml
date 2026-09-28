@@ -1,0 +1,79 @@
+suite: env ConfigMap and secretEnv Secret
+templates:
+  - env.yaml
+values:
+  - ../ci/minimal-values.yaml
+tests:
+  - it: renders nothing when env and secretEnv are empty
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders env as a ConfigMap of strings
+    set:
+      env:
+        LOG_LEVEL: info
+        WORKERS: 2
+        DEBUG: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: minimal-env
+      - equal:
+          path: data
+          value:
+            LOG_LEVEL: info
+            WORKERS: "2"
+            DEBUG: "false"
+
+  - it: renders secretEnv as a Secret with base64 data
+    set:
+      secretEnv:
+        DATABASE_URL: postgresql://user:pw@db:5432/app
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Secret
+      - equal:
+          path: metadata.name
+          value: minimal-env
+      - equal:
+          path: type
+          value: Opaque
+      - equal:
+          path: data.DATABASE_URL
+          decodeBase64: true
+          value: postgresql://user:pw@db:5432/app
+      - notExists:
+          path: stringData
+
+  - it: renders both, before the migration and the Deployment
+    set:
+      env:
+        LOG_LEVEL: info
+      secretEnv:
+        API_KEY: secret
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ConfigMap
+        documentIndex: 0
+      - isKind:
+          of: Secret
+        documentIndex: 1
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-2"
+
+  - it: rejects a secretEnv key that is not an environment variable name
+    set:
+      secretEnv:
+        not-a-name: x
+    asserts:
+      - failedTemplate: {}

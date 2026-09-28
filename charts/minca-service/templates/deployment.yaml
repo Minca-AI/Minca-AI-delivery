@@ -31,9 +31,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        # env is rendered inline, so an env change already changes the pod
-        # template; this annotation also rolls pods when only the secret wiring
-        # changes (a new or renamed secrets[] entry).
+        # env and secretEnv reach the pod through envFrom, so a value change
+        # does not change the pod spec by itself: these checksums do, and roll
+        # the pods. checksum/secrets does the same for the ExternalSecret wiring
+        # (a new or renamed secrets[] entry).
+        checksum/env: {{ toYaml .Values.env | sha256sum }}
+        checksum/secret-env: {{ toYaml .Values.secretEnv | sha256sum }}
         checksum/secrets: {{ toYaml .Values.secrets | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -54,6 +57,7 @@ spec:
               protocol: {{ .protocol | default "TCP" }}
             {{- end }}
           {{- end }}
+          {{- with (include "minca-service.envFrom" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with (include "minca-service.env" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with (include "minca-service.probes" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with .Values.resources }}

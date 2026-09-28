@@ -92,20 +92,52 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
 
-  - it: injects plain env and one secretKeyRef per secret entry
+  - it: injects env from the ConfigMap, then secretEnv from the Secret
     set:
       env:
         LOG_LEVEL: info
+      secretEnv:
+        DATABASE_URL: postgresql://example
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - configMapRef:
+                name: minimal-env
+            - secretRef:
+                name: minimal-env
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: has no envFrom when env and secretEnv are empty
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: stamps the checksum of an empty secretEnv by default
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/secret-env"]
+          value: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+
+  - it: rolls the pods when a secretEnv value changes
+    set:
+      secretEnv:
+        DATABASE_URL: postgresql://new
+    asserts:
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/secret-env"]
+          value: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a  # sha256 of an empty map
+      - exists:
+          path: spec.template.metadata.annotations["checksum/env"]
+
+  - it: keeps one secretKeyRef per optional ExternalSecret entry
+    set:
       secrets:
         - name: DATABASE_URL
           from: example/dev/svc
           key: database_url
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: LOG_LEVEL
-            value: info
       - contains:
           path: spec.template.spec.containers[0].env
           content:

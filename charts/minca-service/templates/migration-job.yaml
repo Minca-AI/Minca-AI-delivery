@@ -47,6 +47,7 @@ spec:
           image: {{ include "minca-service.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with (include "minca-service.command" .Values.migration | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with (include "minca-service.envFrom" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with (include "minca-service.env" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with .Values.resources }}
           resources:

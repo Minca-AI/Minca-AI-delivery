@@ -43,16 +43,35 @@ promote is the only thing that decides what runs.
 {{- printf "%s-%s" .root.Values.name (.entry.name | lower | replace "_" "-") | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{/* env: literal values first, then one secretKeyRef per ExternalSecret. */}}
+{{/* Name shared by the ConfigMap (env) and the Secret (secretEnv) of the service. */}}
+{{- define "minca-service.envObjectName" -}}
+{{- printf "%s-env" (include "minca-service.name" .) -}}
+{{- end -}}
+
+{{/*
+envFrom: the ConfigMap from `env`, then the Secret from `secretEnv`. On a
+duplicate key the later source wins, so a secret value overrides plain config.
+*/}}
+{{- define "minca-service.envFrom" -}}
+{{- if or .Values.env .Values.secretEnv -}}
+envFrom:
+  {{- if .Values.env }}
+  - configMapRef:
+      name: {{ include "minca-service.envObjectName" . }}
+  {{- end }}
+  {{- if .Values.secretEnv }}
+  - secretRef:
+      name: {{ include "minca-service.envObjectName" . }}
+  {{- end }}
+{{- end }}
+{{- end -}}
+
+{{/* env: one secretKeyRef per ExternalSecret (`secrets[]`, optional). */}}
 {{- define "minca-service.env" -}}
 {{- $root := . -}}
-{{- if or .Values.env .Values.secrets -}}
+{{- with .Values.secrets -}}
 env:
-  {{- range $k, $v := .Values.env }}
-  - name: {{ $k }}
-    value: {{ $v | toString | quote }}
-  {{- end }}
-  {{- range .Values.secrets }}
+  {{- range . }}
   - name: {{ .name }}
     valueFrom:
       secretKeyRef:
