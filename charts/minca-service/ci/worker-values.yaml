@@ -1,0 +1,7 @@
+# A worker: no ports, therefore no Service and no probes.
+name: worker
+image:
+  repository: minca/example-worker
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+ports: []
+replicas: 2

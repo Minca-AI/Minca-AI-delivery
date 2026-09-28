@@ -1,0 +1,60 @@
+# Task entrypoints for a Go module (design section 5.1).
+# Same contract and override mechanism as python-uv.yml; see README.md.
+version: '3'
+
+vars:
+  GO_TEST_FLAGS: '{{.GO_TEST_FLAGS | default "-count=1"}}'
+  INTEGRATION_TAGS: '{{.INTEGRATION_TAGS | default "integration"}}'
+  SMOKE_ARGS: '{{.SMOKE_ARGS | default "--help"}}'
+
+tasks:
+  setup:
+    desc: Download and verify the module graph (go.sum is authoritative)
+    cmds:
+      - go mod download
+      - go mod verify
+
+  lint:
+    desc: gofmt and go vet, read-only. Override to add golangci-lint
+    cmds:
+      - |
+        unformatted="$(gofmt -l .)"
+        if [ -n "$unformatted" ]; then
+          echo "gofmt would change:"; echo "$unformatted"; exit 1
+        fi
+      - go vet ./...
+
+  typecheck:
+    desc: The compiler is the type checker
+    cmds:
+      # -o /dev/null: compile and type-check without writing a binary into the tree.
+      - go build -o /dev/null ./...
+
+  arch:
+    desc: go-arch-lint when .go-arch-lint.yml exists. A declared contract with no binary fails
+    cmds:
+      - |
+        if [ ! -f .go-arch-lint.yml ]; then
+          echo "arch: skipped (no .go-arch-lint.yml)"
+        elif ! command -v go-arch-lint >/dev/null; then
+          echo "arch: .go-arch-lint.yml exists but go-arch-lint is not installed" >&2; exit 1
+        else
+          go-arch-lint check
+        fi
+
+  test:
+    desc: Unit lane, no network and no Docker
+    cmds:
+      - go test {{.GO_TEST_FLAGS}} ./...
+
+  test:integration:
+    desc: Integration lane behind a build tag (needs Docker; CI routes it to the large pool)
+    cmds:
+      - go test {{.GO_TEST_FLAGS}} -tags "{{.INTEGRATION_TAGS}}" ./...
+
+  image:smoke:
+    desc: Prove the built image starts. IMAGE is the loaded image reference
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - docker run --rm "{{.IMAGE}}" {{.SMOKE_ARGS}}

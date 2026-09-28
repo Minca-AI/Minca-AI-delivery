@@ -1,0 +1,55 @@
+# Task entrypoints for a Python project managed by Poetry 2.x (design section 5.1).
+# Same contract and override mechanism as python-uv.yml; see README.md.
+version: '3'
+
+vars:
+  PYTEST_ARGS: '{{.PYTEST_ARGS | default "-q"}}'
+  PYTEST_MARKERS: '{{.PYTEST_MARKERS | default "not live and not integration"}}'
+  INTEGRATION_MARKERS: '{{.INTEGRATION_MARKERS | default "integration"}}'
+  MYPY_ARGS: '{{.MYPY_ARGS | default ""}}'
+  SMOKE_ARGS: '{{.SMOKE_ARGS | default "--help"}}'
+
+tasks:
+  setup:
+    desc: Install the locked dependencies (fails if poetry.lock is out of date)
+    cmds:
+      - poetry check --lock
+      - poetry sync --no-interaction
+
+  lint:
+    desc: Style checks, read-only
+    cmds:
+      - poetry run ruff check .
+      - poetry run ruff format --check .
+
+  typecheck:
+    desc: Type checking (configure `files` under [tool.mypy])
+    cmds:
+      - poetry run mypy {{.MYPY_ARGS}}
+
+  arch:
+    desc: Import-linter contracts; skipped when the repository declares none
+    cmds:
+      - |
+        if [ -f .importlinter ] || grep -qs '^\[tool\.importlinter\]' pyproject.toml; then
+          poetry run lint-imports
+        else
+          echo "arch: skipped (no import-linter contract declared)"
+        fi
+
+  test:
+    desc: Unit lane, no network and no Docker
+    cmds:
+      - poetry run pytest {{.PYTEST_ARGS}} -m "{{.PYTEST_MARKERS}}"
+
+  test:integration:
+    desc: Integration lane (needs Docker; CI routes it to the large pool)
+    cmds:
+      - poetry run pytest {{.PYTEST_ARGS}} -m "{{.INTEGRATION_MARKERS}}"
+
+  image:smoke:
+    desc: Prove the built image starts. IMAGE is the loaded image reference
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - docker run --rm "{{.IMAGE}}" {{.SMOKE_ARGS}}

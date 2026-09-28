@@ -1,0 +1,12 @@
+# A consumer Taskfile: include the fragment flattened, override only what differs.
+#
+# DELIVERY_TASKFILES is set by the Minca-AI-delivery workflows to the fragments of
+# the exact commit being run. Outside CI it falls back to the published v1 copy
+# (remote Taskfiles, go-task >= 3.53).
+version: '3'
+
+includes:
+  delivery:
+    taskfile: '{{.DELIVERY_TASKFILES | default "https://raw.githubusercontent.com/Minca-AI/Minca-AI-delivery/v1/taskfiles"}}/python-uv.yml'
+    dir: .
+    flatten: true

@@ -1,0 +1,123 @@
+suite: deployment
+templates:
+  - deployment.yaml
+values:
+  - ../ci/minimal-values.yaml
+tests:
+  - it: renders the image by digest, never by tag
+    set:
+      image.registry: 111111111111.dkr.ecr.us-east-1.amazonaws.com
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: 111111111111.dkr.ecr.us-east-1.amazonaws.com/minca/example-service@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: refuses to render without a digest
+    set:
+      image.digest: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "values.image.digest is required (sha256:...)"
+
+  - it: never reduces capacity during a rollout
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 1
+
+  - it: runs as non-root with a read-only root filesystem by default
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+  - it: mounts a bounded emptyDir at /tmp so the read-only root still works
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 256Mi
+
+  - it: lets a service opt out of the hardening explicitly
+    set:
+      security.readOnlyRootFilesystem: false
+      security.runAsNonRoot: false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: false
+
+  - it: probes readiness, liveness and startup over HTTP
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 30
+
+  - it: renders no probes for a worker
+    set:
+      ports: []
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].ports
+
+  - it: injects plain env and one secretKeyRef per secret entry
+    set:
+      env:
+        LOG_LEVEL: info
+      secrets:
+        - name: DATABASE_URL
+          from: example/dev/svc
+          key: database_url
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LOG_LEVEL
+            value: info
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: minimal-database-url
+                key: DATABASE_URL
+
+  - it: omits replicas when the HPA owns them
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas

@@ -1,0 +1,65 @@
+# Chart release: a tag minca-service-X.Y.Z packages charts/minca-service and
+# pushes it to the OCI registry oci://<DELIVERY_ECR_REGISTRY>/minca/charts
+# (design section 11).
+#
+# Public repository, so: GitHub-hosted runner (never the self-hosted fleet), AWS
+# access only through OIDC, and only from the `release` environment, which
+# requires a reviewer's approval. The role's trust policy must accept exactly
+# repo:Minca-AI/Minca-AI-delivery:environment:release.
+name: chart-release
+
+on:
+  push:
+    tags: ["minca-service-*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    name: publish minca-service
+    if: github.repository == 'Minca-AI/Minca-AI-delivery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The tag must equal the chart version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(awk '/^version:/ {print $2}' charts/minca-service/Chart.yaml)"
+          if [ "$TAG" != "minca-service-${version}" ]; then
+            echo "::error::tag $TAG does not match Chart.yaml version $version"; exit 1
+          fi
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.22.0
+
+      - name: Package
+        run: |
+          helm lint --strict charts/minca-service -f charts/minca-service/ci/full-values.yaml
+          helm package charts/minca-service --destination dist
+
+      - name: Log in to AWS
+        uses: ./actions/ecr-login
+        with:
+          role-arn: ${{ vars.DELIVERY_CHART_ROLE_ARN }}
+          region: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
+
+      - name: Push to the OCI registry
+        env:
+          REGISTRY: ${{ vars.DELIVERY_ECR_REGISTRY }}
+          REGION: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
+        run: |
+          [ -n "$REGISTRY" ] || { echo "::error::set the variable DELIVERY_ECR_REGISTRY"; exit 1; }
+          aws ecr get-login-password --region "$REGION" | helm registry login --username AWS --password-stdin "$REGISTRY"
+          helm push dist/minca-service-*.tgz "oci://${REGISTRY}/minca/charts"

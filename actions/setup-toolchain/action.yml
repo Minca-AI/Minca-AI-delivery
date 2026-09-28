@@ -1,0 +1,108 @@
+name: setup-toolchain
+description: >-
+  Install one language toolchain (python-uv, python-poetry, go or node) plus go-task,
+  with dependency caching. The version comes from the repository's own files
+  (.python-version, go.mod, .nvmrc) unless `version` overrides it.
+
+inputs:
+  toolchain:
+    description: "python-uv | python-poetry | go | node"
+    required: true
+  version:
+    description: Language version override. Empty reads it from the repository files
+    required: false
+    default: ""
+  working-directory:
+    description: Directory holding the project files (relative to the workspace)
+    required: false
+    default: "."
+  task-version:
+    description: go-task version. Pinned so a green build does not depend on "latest"
+    required: false
+    default: "3.53.1"
+  poetry-version:
+    description: Poetry version for the python-poetry toolchain
+    required: false
+    default: "2.5.1"
+
+runs:
+  using: composite
+  steps:
+    - name: Validate toolchain
+      shell: bash
+      env:
+        TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        case "$TOOLCHAIN" in
+          python-uv|python-poetry|go|node) ;;
+          *) echo "::error::toolchain must be python-uv, python-poetry, go or node (got '$TOOLCHAIN')"; exit 1 ;;
+        esac
+
+    - name: Install go-task
+      uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+      with:
+        version: ${{ inputs.task-version }}
+
+    # uv serves python-uv directly and installs Poetry for python-poetry, so both
+    # Python toolchains resolve Poetry and Python the same way on every runner.
+    - name: Install uv
+      if: startsWith(inputs.toolchain, 'python-')
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        working-directory: ${{ inputs.working-directory }}
+        python-version: ${{ inputs.version }}
+        enable-cache: ${{ inputs.toolchain == 'python-uv' }}
+        cache-dependency-glob: ${{ inputs.working-directory }}/uv.lock
+
+    - name: Install Python for Poetry
+      if: inputs.toolchain == 'python-poetry'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.version }}
+        python-version-file: ${{ inputs.version == '' && format('{0}/.python-version', inputs.working-directory) || '' }}
+
+    - name: Install Poetry
+      if: inputs.toolchain == 'python-poetry'
+      shell: bash
+      env:
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+      # The path written is uv's own tool directory, not input-derived data.
+      run: | # zizmor: ignore[github-env]
+        uv tool install "poetry==${POETRY_VERSION}"
+        uv tool dir --bin >> "$GITHUB_PATH"
+
+    - name: Cache Poetry packages
+      if: inputs.toolchain == 'python-poetry'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/pypoetry
+        key: poetry-${{ runner.os }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working-directory)) }}
+
+    # go.sum is the cache key when it exists; a module with no dependencies has none,
+    # and setup-go then warns on every run, so fall back to go.mod.
+    - name: Resolve Go cache key file
+      if: inputs.toolchain == 'go'
+      id: gokey
+      shell: bash
+      env:
+        WD: ${{ inputs.working-directory }}
+      run: |
+        if [ -f "$WD/go.sum" ]; then echo "path=$WD/go.sum" >> "$GITHUB_OUTPUT"
+        else echo "path=$WD/go.mod" >> "$GITHUB_OUTPUT"; fi
+
+    - name: Install Go
+      if: inputs.toolchain == 'go'
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ inputs.version }}
+        go-version-file: ${{ inputs.version == '' && format('{0}/go.mod', inputs.working-directory) || '' }}
+        cache-dependency-path: ${{ steps.gokey.outputs.path }}
+
+    - name: Install Node
+      if: inputs.toolchain == 'node'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.version }}
+        node-version-file: ${{ inputs.version == '' && format('{0}/.nvmrc', inputs.working-directory) || '' }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json

@@ -1,0 +1,63 @@
+name: bump-pin
+description: >-
+  Write one service's tag and digest into a deploy repository's pins.yaml and land
+  it: a direct commit (dev) or a pull request (prod). A push that loses a race with
+  another promotion is rebased and retried up to 5 times, then fails loudly.
+
+inputs:
+  repo:
+    description: Deploy repository, owner/name (e.g. Minca-AI/Minca-AI-deploy-GNP)
+    required: true
+  path:
+    description: Path of pins.yaml in the deploy repository
+    required: true
+  service:
+    description: Key under `services:` in pins.yaml
+    required: true
+  image:
+    description: Optional ECR repository name written to services.<service>.image (e.g. minca/gnp-codifier)
+    required: false
+    default: ""
+  tag:
+    description: Image tag (sha-<40-char git sha>)
+    required: true
+  digest:
+    description: Image digest (sha256:...)
+    required: true
+  environment:
+    description: Environment name, used in the commit message and PR branch
+    required: true
+  mode:
+    description: "commit | pull-request"
+    required: false
+    default: commit
+  base-branch:
+    description: Branch of the deploy repository that holds the pins
+    required: false
+    default: main
+  token:
+    description: Token with contents (and, for pull-request mode, pull-requests) write on the deploy repository
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure yq
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/install-yq.sh"
+
+    - name: Pin and land
+      shell: bash
+      env:
+        REMOTE: https://github.com/${{ inputs.repo }}.git
+        GH_REPO: ${{ inputs.repo }}
+        GH_TOKEN: ${{ inputs.token }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        PINS_PATH: ${{ inputs.path }}
+        SERVICE: ${{ inputs.service }}
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.tag }}
+        DIGEST: ${{ inputs.digest }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        MODE: ${{ inputs.mode }}
+      run: bash "$GITHUB_ACTION_PATH/bump-pin.sh"

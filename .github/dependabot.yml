@@ -1,0 +1,17 @@
+# Keeps the SHA-pinned third-party actions current. Dependabot rewrites the pin
+# and its version comment together, so pinning by SHA does not mean going stale.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /actions/*
+    schedule:
+      interval: weekly
+    # Let a new release age a week before adopting it: a compromised action
+    # release is usually caught and yanked within days.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

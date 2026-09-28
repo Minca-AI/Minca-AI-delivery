@@ -1,0 +1,64 @@
+{{- $name := include "minca-service.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "minca-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  # A rollout that never becomes ready is reported Degraded after this long, while
+  # the previous ReplicaSet keeps serving (maxUnavailable 0 below).
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Capacity never dips during a rollout: a new pod must be ready before an
+      # old one is removed. This is what makes a bad image harmless.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "minca-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "minca-service.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # env is rendered inline, so an env change already changes the pod
+        # template; this annotation also rolls pods when only the secret wiring
+        # changes (a new or renamed secrets[] entry).
+        checksum/secrets: {{ toYaml .Values.secrets | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "minca-service.podCommon" . | nindent 6 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "minca-service.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with (include "minca-service.command" .Values | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with .Values.ports }}
+          ports:
+            {{- range . }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ .protocol | default "TCP" }}
+            {{- end }}
+          {{- end }}
+          {{- with (include "minca-service.env" . | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with (include "minca-service.probes" . | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- include "minca-service.containerSecurityContext" . | nindent 10 }}
+          {{- include "minca-service.tmpMount" . | nindent 10 }}

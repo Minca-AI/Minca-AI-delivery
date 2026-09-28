@@ -1,0 +1,59 @@
+suite: optional objects
+templates:
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - ingress.yaml
+values:
+  - ../ci/minimal-values.yaml
+tests:
+  - it: renders a Service but no HPA, PDB or Ingress by default
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: service.yaml
+      - hasDocuments:
+          count: 0
+        template: hpa.yaml
+      - hasDocuments:
+          count: 0
+        template: pdb.yaml
+      - hasDocuments:
+          count: 0
+        template: ingress.yaml
+
+  - it: renders no Service for a worker
+    set:
+      ports: []
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: service.yaml
+
+  - it: renders an HPA and a maxUnavailable PDB when autoscaling
+    set:
+      autoscaling.enabled: true
+      autoscaling.maxReplicas: 4
+    asserts:
+      - equal:
+          path: spec.maxReplicas
+          value: 4
+        template: hpa.yaml
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+        template: pdb.yaml
+
+  - it: routes the ingress to the named port
+    set:
+      ingress.enabled: true
+      ingress.host: svc.example.internal
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http
+        template: ingress.yaml
+      - equal:
+          path: spec.rules[0].host
+          value: svc.example.internal
+        template: ingress.yaml

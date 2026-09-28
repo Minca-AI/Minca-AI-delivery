@@ -1,0 +1,5 @@
+# Test suites and CI fixtures are not part of the published chart.
+tests/
+ci/
+.git/
+*.md.orig

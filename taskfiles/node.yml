@@ -1,0 +1,60 @@
+# Task entrypoints for a Node project using npm (design section 5.1).
+# Same contract and override mechanism as python-uv.yml; see README.md.
+#
+# lint and test map to npm scripts of the same name and fail if they are absent:
+# they are required targets. typecheck and arch run their script when present and
+# print `skipped` otherwise, as the contract allows.
+version: '3'
+
+vars:
+  SMOKE_ARGS: '{{.SMOKE_ARGS | default "--help"}}'
+
+tasks:
+  setup:
+    desc: Install exactly what package-lock.json records
+    cmds:
+      - npm ci --no-audit --no-fund
+
+  lint:
+    desc: npm run lint
+    cmds:
+      - npm run lint
+
+  typecheck:
+    desc: npm run typecheck, or skipped when the script does not exist
+    cmds:
+      - task: _optional-script
+        vars: {SCRIPT: typecheck}
+
+  arch:
+    desc: npm run arch, or skipped when the script does not exist
+    cmds:
+      - task: _optional-script
+        vars: {SCRIPT: arch}
+
+  test:
+    desc: Unit lane (npm test), no network and no Docker
+    cmds:
+      - npm test
+
+  test:integration:
+    desc: npm run test:integration (needs Docker; CI routes it to the large pool)
+    cmds:
+      - npm run test:integration
+
+  image:smoke:
+    desc: Prove the built image starts. IMAGE is the loaded image reference
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - docker run --rm "{{.IMAGE}}" {{.SMOKE_ARGS}}
+
+  _optional-script:
+    internal: true
+    cmds:
+      - |
+        if node -e 'process.exit(require("./package.json").scripts?.["{{.SCRIPT}}"] ? 0 : 1)'; then
+          npm run {{.SCRIPT}}
+        else
+          echo "{{.SCRIPT}}: skipped (no npm script)"
+        fi

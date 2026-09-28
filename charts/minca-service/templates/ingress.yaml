@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.ports }}
+{{- fail "ingress.enabled requires at least one port" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "minca-service.name" . }}
+  labels:
+    {{- include "minca-service.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "minca-service.name" . }}
+                port:
+                  {{- if kindIs "string" .Values.ingress.port }}
+                  name: {{ .Values.ingress.port }}
+                  {{- else }}
+                  number: {{ .Values.ingress.port }}
+                  {{- end }}
+      {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+{{- end }}

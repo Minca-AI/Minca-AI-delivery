@@ -1,0 +1,13 @@
+{
+  "name": "example-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fixture consumer of Minca-AI-delivery: exercises the node fragment and image.yml",
+  "main": "index.js",
+  "bin": { "example-service": "index.js" },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint": "node --check index.js && node --check greeting.js",
+    "test": "node --test"
+  }
+}

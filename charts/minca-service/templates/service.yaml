@@ -1,0 +1,19 @@
+{{- if .Values.ports }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minca-service.name" . }}
+  labels:
+    {{- include "minca-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "minca-service.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- range .Values.ports }}
+    - name: {{ .name }}
+      port: {{ .containerPort }}
+      targetPort: {{ .name }}
+      protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
+{{- end }}
