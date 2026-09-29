@@ -271,7 +271,7 @@ tasks:
 3. Replace the repository's CI with the caller workflow above. Remove every
    `runs-on: ubuntu-latest`.
 4. Confirm the organization variables below are visible to the repository.
-5. For deployment: the ECR repository `minca/<name>` must exist, the Delivery App
+5. For deployment: the ECR repository `minca/<name>` must exist, the mincaai-ci App
    must be installed on the deploy repository, and the service must have an entry
    in the deploy repository's values and `pins.yaml`.
 
