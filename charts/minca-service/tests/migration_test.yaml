@@ -89,3 +89,34 @@ tests:
       - lengthEqual:
           path: spec.template.spec.containers[0].volumeMounts
           count: 1
+
+  - it: overrides env for the Job only with migration.env
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+      env:
+        DB_USER: service_app
+      migration.env:
+        DB_USER: service_migrator
+        MIGRATION_TIMEOUT: 60
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: DB_USER
+              value: service_migrator
+            - name: MIGRATION_TIMEOUT
+              value: "60"
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - configMapRef:
+                name: minimal-env
+
+  - it: renders no env list without migration.env or secrets
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env

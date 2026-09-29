@@ -213,6 +213,13 @@ volume), so the chart creates no storage objects.
 | `persistence.mountPath` | string | `""` | Absolute path in the container; required when enabled |
 | `persistence.subPath` | string | `""` | Optional sub-directory of the volume to mount |
 
+Migration env (1.3.0+): `migration.env` (map, default `{}`) is rendered as the
+migration Job's container `env`, which overrides the same keys from `env` and
+`secretEnv`. It is for a migration that runs under a different identity than the
+service, for example `{DB_USER: <migrator role>}` when the database uses IAM
+authentication with a schema-owning migrator and a least-privilege app role. The
+Deployment never receives it. Plain values only: they appear in the Job spec.
+
 Sync ordering under ArgoCD: ServiceAccount, the env ConfigMap/Secret and any
 ExternalSecrets at wave -2, the
 migration Job (a `Sync` hook, `backoffLimit: 0`) at wave -1, everything else at

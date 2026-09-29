@@ -24,6 +24,8 @@ serviceAccount:
 migration:
   enabled: true
   command: ["example-service", "migrate"]
+  env:
+    DB_USER: example_migrator
 ingress:
   enabled: true
   host: codifier.example.internal
