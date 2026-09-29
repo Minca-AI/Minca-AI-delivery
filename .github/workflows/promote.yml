@@ -58,10 +58,10 @@ on:
         type: string
         default: ci
     secrets:
-      DELIVERY_APP_ID:
+      MINCA_CI_APP_ID:
         description: The Minca Delivery GitHub App id
         required: true
-      DELIVERY_APP_PRIVATE_KEY:
+      MINCA_CI_APP_PRIVATE_KEY:
         description: The Minca Delivery GitHub App private key
         required: true
 
@@ -140,8 +140,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.DELIVERY_APP_ID }}
-          private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.MINCA_CI_APP_ID }}
+          private-key: ${{ secrets.MINCA_CI_APP_PRIVATE_KEY }}
           owner: ${{ steps.plan.outputs.owner }}
           repositories: ${{ steps.plan.outputs.repo-name }}
           permission-contents: write

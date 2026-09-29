@@ -152,7 +152,7 @@ workflow, decides which refs may push (design: `refs/heads/main` only).
 | `base-branch` | `main` | Deploy repository branch |
 | `pool` | `ci` | Runner pool |
 
-Secrets (`secrets: inherit`): `DELIVERY_APP_ID`, `DELIVERY_APP_PRIVATE_KEY`.
+Secrets (`secrets: inherit`): `MINCA_CI_APP_ID`, `MINCA_CI_APP_PRIVATE_KEY`.
 
 Behaviour: checks that the tag exists in ECR and resolves to the digest; writes
 `pins.yaml`; commits `chore(pins): <service> <tag> [<env>]` (or opens a pull
@@ -282,8 +282,8 @@ tasks:
 | Variable | `DELIVERY_ECR_REGISTRY` | `<account>.dkr.ecr.<region>.amazonaws.com` | private repositories |
 | Variable | `DELIVERY_ECR_ROLE_ARN` | the `delivery-ecr-push` role | private repositories |
 | Variable | `DELIVERY_AWS_REGION` | `us-east-1` (the default when unset) | private repositories |
-| Secret | `DELIVERY_APP_ID` | Minca Delivery App id | repositories that promote |
-| Secret | `DELIVERY_APP_PRIVATE_KEY` | Minca Delivery App private key | repositories that promote |
+| Secret | `MINCA_CI_APP_ID` | mincaai-ci GitHub App id (installed on the deploy repos with Contents + Pull requests write) | repositories that promote |
+| Secret | `MINCA_CI_APP_PRIVATE_KEY` | mincaai-ci GitHub App private key | repositories that promote |
 | Secret (optional) | `MINCA_CI_APP_ID`, `MINCA_CI_APP_PRIVATE_KEY` | App that can read `minca-quality-hooks` | repositories that run guards |
 
 This repository itself, for chart releases only: environment `release` (required
