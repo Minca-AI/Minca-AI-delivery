@@ -66,17 +66,27 @@ envFrom:
 {{- end }}
 {{- end -}}
 
-{{/* env: one secretKeyRef per ExternalSecret (`secrets[]`, optional). */}}
+{{/*
+env: one secretKeyRef per ExternalSecret (`secrets[]`, optional), then `extra`
+literal values (a map, rendered in key order). Called with
+(dict "root" $ "extra" <map>). An `env` entry overrides the same key from
+envFrom, which is how the migration Job's `migration.env` replaces a value the
+service reads from its ConfigMap or Secret.
+*/}}
 {{- define "minca-service.env" -}}
-{{- $root := . -}}
-{{- with .Values.secrets -}}
+{{- $root := .root -}}
+{{- if or $root.Values.secrets .extra -}}
 env:
-  {{- range . }}
+  {{- range $root.Values.secrets }}
   - name: {{ .name }}
     valueFrom:
       secretKeyRef:
         name: {{ include "minca-service.secretName" (dict "root" $root "entry" .) }}
         key: {{ .name }}
+  {{- end }}
+  {{- range $key, $value := .extra }}
+  - name: {{ $key }}
+    value: {{ $value | toString | quote }}
   {{- end }}
 {{- end }}
 {{- end -}}

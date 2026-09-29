@@ -93,7 +93,12 @@
         "enabled": {"type": "boolean"},
         "command": {"type": "array", "items": {"type": "string"}},
         "args": {"type": "array", "items": {"type": "string"}},
-        "activeDeadlineSeconds": {"type": "integer", "minimum": 60}
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 60},
+        "env": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        }
       }
     },
     "ingress": {

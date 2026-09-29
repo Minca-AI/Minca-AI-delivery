@@ -78,6 +78,11 @@ migration:
   command: []
   args: []
   activeDeadlineSeconds: 900
+  # Env vars for the Job only, rendered as container `env`, so they override the
+  # same keys from `env` and `secretEnv` (envFrom). For a migration that must run
+  # as a different identity than the service, e.g. {DB_USER: <migrator role>}.
+  # Plain values: never a secret, it is visible in the Job spec.
+  env: {}
 
 ingress:
   enabled: false

@@ -109,6 +109,16 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].env
 
+  - it: never applies migration.env to the service
+    set:
+      migration.enabled: true
+      migration.command: ["svc", "migrate"]
+      migration.env:
+        DB_USER: service_migrator
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
   - it: has no envFrom when env and secretEnv are empty
     asserts:
       - notExists:

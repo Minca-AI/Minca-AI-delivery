@@ -59,7 +59,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- with (include "minca-service.envFrom" . | trim) }}{{ nindent 10 . }}{{ end }}
-          {{- with (include "minca-service.env" . | trim) }}{{ nindent 10 . }}{{ end }}
+          {{- with (include "minca-service.env" (dict "root" . "extra" (dict)) | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with (include "minca-service.probes" . | trim) }}{{ nindent 10 . }}{{ end }}
           {{- with .Values.resources }}
           resources:
