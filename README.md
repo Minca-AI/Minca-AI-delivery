@@ -16,7 +16,7 @@ actions/            setup-toolchain  ecr-login  build-smoke-push  bump-pin
 taskfiles/          python-uv.yml  python-poetry.yml  go.yml  node.yml
 charts/             minca-service
 examples/           python-uv  go  node       (fixture consumers run by self-test)
-tests/              bump-pin unit test
+tests/              bump-pin and build-args unit tests
 ```
 
 ## Quick start: a service repository's whole workflow
@@ -45,6 +45,7 @@ jobs:
     uses: Minca-AI/Minca-AI-delivery/.github/workflows/image.yml@v1
     with:
       dockerfile: docker/Dockerfile
+      # build-args: BINARY=<cmd>   # one Dockerfile, several binaries (see "Build args")
   promote-gnp-dev:
     if: github.ref == 'refs/heads/main'
     needs: [image]
@@ -126,6 +127,7 @@ Optional secrets (through `secrets: inherit`): `MINCA_CI_APP_ID`,
 | `smoke` | boolean | `true` | Run `task image:smoke` on the loaded image before pushing |
 | `push` | boolean | `true` | Push after the smoke test. A `pull_request` run never pushes |
 | `platforms` | string | `linux/amd64` | One platform (a loaded, smoke-tested image is single-platform) |
+| `build-args` | string | `""` | Newline-separated `NAME=value` lines for the Docker build (1.2.0+). Not for secrets; see "Build args" |
 | `pool` | `ci` \| `large` | `ci` | Runner pool |
 
 | Output | Example |
@@ -136,6 +138,23 @@ Optional secrets (through `secrets: inherit`): `MINCA_CI_APP_ID`,
 
 The calling job must grant `id-token: write`. The role's trust policy, not the
 workflow, decides which refs may push (design: `refs/heads/main` only).
+
+#### Build args (v1.2.0+)
+
+`build-args` takes newline-separated `NAME=value` lines, passed to the build as
+`--build-arg`. Use it to select what to build, for example `BINARY=<cmd>` when one
+Dockerfile ships several binaries. Build arguments are recorded in the image
+history, which anyone who can pull the image can read: **never pass a secret**
+(use a BuildKit secret mount in a repository-specific workflow instead).
+
+`build-smoke-push` checks every line before anything is built and fails on any
+fault, listing each by line number without printing values: blank lines are
+ignored; a name matches `[A-Za-z_][A-Za-z0-9_]*` and appears once; a name may not
+start with `BUILDKIT_` or contain `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
+`CREDENTIAL`, `PRIVATE`, `APIKEY`, `API_KEY` or `ACCESS_KEY` (any case); a value
+may be empty and may contain `=`, commas and inner spaces, but not a double quote
+or leading/trailing whitespace (the build action's list parser would rewrite it).
+Comments are not supported.
 
 ### `promote.yml`
 
@@ -165,7 +184,7 @@ request); retries a lost race up to 5 times with rebase; in `commit` mode moves
 |---|---|---|
 | `setup-toolchain` | `toolchain`, `version`, `working-directory` | uv / Poetry / Go / Node plus go-task, with caching |
 | `ecr-login` | `role-arn`, `region` | OIDC assume-role and `docker login` to ECR; output `registry` |
-| `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `smoke`, `push`, `platforms` | Build and load, `task image:smoke`, push the same image; output `digest` |
+| `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `working-directory`, `smoke`, `push`, `platforms`, `build-args`, `taskfiles-dir` | Build and load, `task image:smoke`, push the same image; output `digest` |
 | `bump-pin` | `repo`, `path`, `service`, `tag`, `digest`, `mode`, `token` | Edit `pins.yaml`, commit or open a PR, retry loop |
 
 A repository whose needs the workflows do not cover uses these directly:
@@ -317,6 +336,7 @@ actionlint
 uvx zizmor --min-severity low .
 shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh
 bash tests/bump-pin/test_bump_pin.sh           # needs yq v4
+bash tests/build-args/test_validate_build_args.sh
 bash .github/scripts/chart-check.sh            # needs helm, helm-unittest, kubeconform
 cd examples/python-uv && DELIVERY_TASKFILES=$PWD/../../taskfiles task setup lint typecheck arch test
 ```
