@@ -192,6 +192,8 @@ jobs:
     with:
       image-name: delivery-fixture-go
       working-directory: examples/go
+      # The go fixture requires it (examples/go/Dockerfile); its image:smoke checks the baked value.
+      build-args: GREETING_NAME=delivery-self-test
       push: false
       runs-on-override: '["ubuntu-latest"]'
 
