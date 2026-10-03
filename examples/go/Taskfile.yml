@@ -3,6 +3,11 @@
 # DELIVERY_TASKFILES is set by the Minca-AI-delivery workflows to the fragments of
 # the exact commit being run. Outside CI it falls back to the published v1 copy
 # (remote Taskfiles, go-task >= 3.53).
+#
+# image:smoke is overridden: this fixture is the build-args test of image.yml.
+# It runs the fragment's own smoke first (included again below, internal), then
+# checks the greeting the image was built with. SMOKE_GREETING must match the
+# GREETING_NAME that self-test.yml's image-go job passes as a build arg.
 version: '3'
 
 includes:
@@ -10,3 +15,25 @@ includes:
     taskfile: '{{.DELIVERY_TASKFILES | default "https://raw.githubusercontent.com/Minca-AI/Minca-AI-delivery/v1/taskfiles"}}/go.yml'
     dir: .
     flatten: true
+    excludes: [image:smoke]
+  fragment:
+    taskfile: '{{.DELIVERY_TASKFILES | default "https://raw.githubusercontent.com/Minca-AI/Minca-AI-delivery/v1/taskfiles"}}/go.yml'
+    dir: .
+    internal: true
+
+vars:
+  SMOKE_GREETING: hello, delivery-self-test
+
+tasks:
+  image:smoke:
+    desc: The fragment's smoke, then the greeting baked in by the GREETING_NAME build arg
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - task: fragment:image:smoke
+      - |
+        got="$(docker run --rm "{{.IMAGE}}")"
+        if [ "$got" != "{{.SMOKE_GREETING}}" ]; then
+          echo "image:smoke: got '$got', want '{{.SMOKE_GREETING}}'" >&2; exit 1
+        fi
+        echo "image:smoke: $got"

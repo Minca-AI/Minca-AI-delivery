@@ -6,6 +6,9 @@
 #
 # Configuration is organization (or repository) variables, never inputs holding
 # account ids: DELIVERY_ECR_REGISTRY, DELIVERY_ECR_ROLE_ARN, DELIVERY_AWS_REGION.
+#
+# build-args (NAME=value lines) select what to build, e.g. one binary of several;
+# they are never secrets: build arguments are recorded in the image history.
 name: image
 
 on:
@@ -39,6 +42,10 @@ on:
         description: Target platform (one; Fargate is linux/amd64)
         type: string
         default: linux/amd64
+      build-args:
+        description: "Newline-separated NAME=value build arguments. NOT for secrets: they are recorded in the image history. Validated by build-smoke-push"
+        type: string
+        default: ""
       pool:
         description: "Runner pool: ci | large"
         type: string
@@ -127,4 +134,5 @@ jobs:
           smoke: ${{ inputs.smoke }}
           push: ${{ steps.plan.outputs.push }}
           platforms: ${{ inputs.platforms }}
+          build-args: ${{ inputs.build-args }}
           taskfiles-dir: ${{ github.workspace }}/delivery/taskfiles
