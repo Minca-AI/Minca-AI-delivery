@@ -9,6 +9,11 @@
 #
 # build-args (NAME=value lines) select what to build, e.g. one binary of several;
 # they are never secrets: build arguments are recorded in the image history.
+#
+# pre-build runs one script of the repository before the build, to put verified inputs (a model)
+# into the build context. pre-build-role-arn gives that step, and only that step, a read-only AWS
+# session; only push, workflow_dispatch, schedule and release events get it (a pull request never
+# does). Both default to "": nothing changes for a caller that sets neither.
 name: image
 
 on:
@@ -44,6 +49,14 @@ on:
         default: linux/amd64
       build-args:
         description: "Newline-separated NAME=value build arguments. NOT for secrets: they are recorded in the image history. Validated by build-smoke-push"
+        type: string
+        default: ""
+      pre-build:
+        description: "Script run in working-directory before the build (1.3.0+): a relative path of a file that stays inside working-directory. It must fail closed. Validated by actions/pre-build"
+        type: string
+        default: ""
+      pre-build-role-arn:
+        description: "IAM role assumed through OIDC for the pre-build step only (1.3.0+). Not exported to the build or the push. Assumed only on push, workflow_dispatch, schedule and release events"
         type: string
         default: ""
       pool:
@@ -108,6 +121,15 @@ jobs:
           REGISTRY: ${{ vars.DELIVERY_ECR_REGISTRY }}
           ROLE_ARN: ${{ vars.DELIVERY_ECR_ROLE_ARN }}
         run: bash delivery/.github/scripts/plan-image.sh
+
+      - name: Pre-build
+        if: inputs.pre-build != '' || inputs.pre-build-role-arn != ''
+        uses: ./delivery/actions/pre-build
+        with:
+          script: ${{ inputs.pre-build }}
+          role-arn: ${{ inputs.pre-build-role-arn }}
+          region: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
+          working-directory: repo/${{ inputs.working-directory }}
 
       - name: Install go-task
         if: inputs.smoke
