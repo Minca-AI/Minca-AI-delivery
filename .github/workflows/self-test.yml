@@ -109,6 +109,46 @@ jobs:
       - name: Run
         run: bash tests/bump-pin/test_bump_pin.sh
 
+  build-args:
+    name: build-args unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run
+        run: bash tests/build-args/test_validate_build_args.sh
+
+  # GREETING_NAME alone would build (the go fixture gets the argument it needs),
+  # so the only reason this step can fail is the validator refusing GH_TOKEN
+  # before the build: a skipped validation turns this job red.
+  build-args-fail-closed:
+    name: build-smoke-push refuses a credential-like build arg
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build with a refused build arg
+        id: refused
+        continue-on-error: true
+        uses: ./actions/build-smoke-push
+        with:
+          image: delivery-fixture-go
+          tag: refused
+          working-directory: examples/go
+          smoke: "false"
+          push: "false"
+          build-args: |
+            GREETING_NAME=delivery-self-test
+            GH_TOKEN=not-a-secret
+      - name: The action refused it
+        env:
+          OUTCOME: ${{ steps.refused.outcome }}
+        run: '[ "$OUTCOME" = failure ] || { echo "::error::build-smoke-push accepted GH_TOKEN as a build arg (outcome=$OUTCOME)"; exit 1; }'
+
   ci-python-uv:
     uses: ./.github/workflows/ci.yml
     with:
@@ -152,6 +192,8 @@ jobs:
     with:
       image-name: delivery-fixture-go
       working-directory: examples/go
+      # The go fixture requires it (examples/go/Dockerfile); its image:smoke checks the baked value.
+      build-args: GREETING_NAME=delivery-self-test
       push: false
       runs-on-override: '["ubuntu-latest"]'
 
