@@ -175,10 +175,12 @@ step does not exist and nothing changes for a caller.
   looked at (`actions/pre-build/validate-pre-build.sh`). The script is run with `bash`,
   so it needs no executable bit.
 - **AWS session.** `pre-build-role-arn` (an IAM role ARN) is assumed through OIDC for
-  that step alone, for 15 minutes. The credentials reach the script as
+  that step alone, for 15 minutes (the script must finish its AWS calls within that; the
+  action's `role-duration-seconds` input can raise it for direct users). The credentials reach the script as
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` (masked) and are
   not written to the job environment (the action fails the job if they are): the build,
-  the smoke test and the ECR login never see them. The role needs a trust policy that
+  the smoke test and the ECR login never see them. If the runner service itself exports
+  static `AWS_*` credentials, the check fails every role-using run (closed, on purpose). The role needs a trust policy that
   names the calling repository and ref, like the push role. Give it read access to the
   inputs and nothing else.
 - **Which events get the session.** An allow-list: `push`, `workflow_dispatch`,
@@ -189,11 +191,15 @@ step does not exist and nothing changes for a caller.
   refuse to on any other.
 - **What the script does not get.** The runner's OIDC token endpoint
   (`ACTIONS_ID_TOKEN_REQUEST_*`) and the ambient AWS credential sources
-  (`AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_PROFILE`, the shared credentials
-  and config files, the `AWS_CONTAINER_*` variables) are removed from its environment,
-  so it cannot mint another identity from the job's token. This is a deny-list on the
-  environment, not a sandbox: the script is a process on the runner host and can still
-  reach whatever the host can (instance metadata included). The trust policy of the role
+  (`AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_PROFILE`, `AWS_SECURITY_TOKEN`,
+  the `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE` variables, the `AWS_CONTAINER_*`
+  variables) are removed from its environment, so it cannot mint another identity from
+  the job's token. This is a deny-list on the environment, not a sandbox: the script is a
+  process on the runner host and can still reach whatever the host can (the default
+  `~/.aws` files and instance metadata included), and it keeps the runner's file-command
+  variables (`GITHUB_ENV`, `GITHUB_OUTPUT`, `GITHUB_PATH`), so "the build never sees the
+  credentials" does not mean "the script cannot influence the later steps"; the
+  Dockerfile and the Taskfile run branch code in the same job anyway. The trust policy of the role
   is the real gate; on self-hosted runners block or hop-limit the metadata service and do
   not run fork pull requests on the AWS-connected pools.
 - **Not for secrets.** What the script puts in the build context ends up in the image
