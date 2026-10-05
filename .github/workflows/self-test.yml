@@ -55,7 +55,7 @@ jobs:
         run: pipx run zizmor==1.30.1 --min-severity low .
 
       - name: shellcheck
-        run: shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh
+        run: shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh tests/*/fixtures/*.sh examples/*/pre-build.sh
 
       - name: Install go-task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
@@ -119,6 +119,84 @@ jobs:
           persist-credentials: false
       - name: Run
         run: bash tests/build-args/test_validate_build_args.sh
+
+  pre-build:
+    name: pre-build unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run
+        run: bash tests/pre-build/test_validate_pre_build.sh
+
+  # The action runs a script in its working directory, without AWS credentials when no role is given.
+  pre-build-runs:
+    name: pre-build action runs the script
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run a script that checks its environment
+        uses: ./actions/pre-build
+        with:
+          script: clean-env.sh
+          working-directory: tests/pre-build/fixtures
+
+  # A role on a pull_request is never assumed: the script runs, still without credentials. The role
+  # below does not exist; assuming it would fail the job, so a green job proves the gating.
+  pre-build-pr-gating:
+    name: pre-build never assumes a role on a pull request
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run with a role that must be ignored
+        uses: ./actions/pre-build
+        with:
+          script: clean-env.sh
+          role-arn: arn:aws:iam::123456789012:role/pre-build-self-test-never-assumed
+          working-directory: tests/pre-build/fixtures
+
+  # A failing script, and a path that leaves the checkout, must both fail the action.
+  pre-build-fail-closed:
+    name: pre-build fails closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A script that exits non-zero
+        id: failing
+        continue-on-error: true
+        uses: ./actions/pre-build
+        with:
+          script: fail.sh
+          working-directory: tests/pre-build/fixtures
+      - name: A path outside the working directory
+        id: traversal
+        continue-on-error: true
+        uses: ./actions/pre-build
+        with:
+          script: ../../../README.md
+          working-directory: tests/pre-build/fixtures
+      - name: Both were refused
+        env:
+          FAILING: ${{ steps.failing.outcome }}
+          TRAVERSAL: ${{ steps.traversal.outcome }}
+        run: |
+          [ "$FAILING" = failure ] || { echo "::error::a failing pre-build script did not fail the action (outcome=$FAILING)"; exit 1; }
+          [ "$TRAVERSAL" = failure ] || { echo "::error::pre-build accepted a path outside the working directory (outcome=$TRAVERSAL)"; exit 1; }
 
   # GREETING_NAME alone would build (the go fixture gets the argument it needs),
   # so the only reason this step can fail is the validator refusing GH_TOKEN
@@ -194,6 +272,19 @@ jobs:
       working-directory: examples/go
       # The go fixture requires it (examples/go/Dockerfile); its image:smoke checks the baked value.
       build-args: GREETING_NAME=delivery-self-test
+      push: false
+      runs-on-override: '["ubuntu-latest"]'
+
+  # The Dockerfile COPYs a file only pre-build.sh creates, so this builds only if the script ran first.
+  image-pre-build:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/image.yml
+    with:
+      image-name: delivery-fixture-pre-build
+      working-directory: examples/pre-build
+      pre-build: pre-build.sh
       push: false
       runs-on-override: '["ubuntu-latest"]'
 

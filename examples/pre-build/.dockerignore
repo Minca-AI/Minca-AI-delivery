@@ -1,0 +1,3 @@
+.gitignore
+Taskfile.yml
+pre-build.sh

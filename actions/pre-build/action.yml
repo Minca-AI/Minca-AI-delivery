@@ -1,0 +1,70 @@
+name: pre-build
+description: >-
+  Run one script of the checked-out repository before the image build, optionally with a short
+  read-only AWS session that exists for that step alone. Intended for fetching verified build
+  inputs (a model, a dataset) into the build context. The script must fail closed: a non-zero
+  exit stops the workflow before anything is built or pushed. The calling job needs
+  `permissions: id-token: write` when a role is given.
+
+inputs:
+  script:
+    description: Script path relative to working-directory. Empty means do nothing
+    required: false
+    default: ""
+  role-arn:
+    description: >-
+      IAM role assumed through GitHub OIDC for this step only. Its credentials are handed to the
+      script as environment variables and are NOT exported to the following steps. Skipped on
+      pull_request events, which never get AWS credentials.
+    required: false
+    default: ""
+  region:
+    description: AWS region of the STS call
+    required: false
+    default: us-east-1
+  working-directory:
+    description: Checkout directory the script runs in
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Validate the pre-build inputs
+      id: plan
+      shell: bash
+      env:
+        SCRIPT: ${{ inputs.script }}
+        ROLE_ARN: ${{ inputs.role-arn }}
+        WORKDIR: ${{ inputs.working-directory }}
+        EVENT: ${{ github.event_name }}
+      run: bash "$GITHUB_ACTION_PATH/validate-pre-build.sh"
+
+    - name: Assume the pre-build role through OIDC
+      id: aws
+      if: steps.plan.outputs.assume == 'true'
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.region }}
+        role-session-name: prebuild-${{ github.run_id }}-${{ github.run_attempt }}
+        # Step-scoped credentials: returned as (masked) outputs for the next step, never written
+        # to the job environment, so the image build and the push session never see them.
+        output-credentials: true
+        output-env-credentials: false
+        mask-aws-account-id: true
+
+    - name: Run the pre-build script
+      if: steps.plan.outputs.run == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SCRIPT: ${{ inputs.script }}
+        AWS_ACCESS_KEY_ID: ${{ steps.aws.outputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.aws.outputs.aws-secret-access-key }}
+        AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
+        AWS_DEFAULT_REGION: ${{ inputs.region }}
+      run: |
+        # An absent session leaves the three variables empty, which the AWS CLI treats as unset.
+        if [ -z "$AWS_ACCESS_KEY_ID" ]; then unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; fi
+        exec bash "./$SCRIPT"

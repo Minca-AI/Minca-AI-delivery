@@ -12,11 +12,11 @@ secrets of the consumers. See [SECURITY.md](SECURITY.md).
 ```
 .github/workflows/  ci.yml  quality-guards.yml  image.yml  promote.yml   (reusable)
                     self-test.yml  release.yml  chart-release.yml         (this repo)
-actions/            setup-toolchain  ecr-login  build-smoke-push  bump-pin
+actions/            setup-toolchain  ecr-login  pre-build  build-smoke-push  bump-pin
 taskfiles/          python-uv.yml  python-poetry.yml  go.yml  node.yml
 charts/             minca-service
-examples/           python-uv  go  node       (fixture consumers run by self-test)
-tests/              bump-pin and build-args unit tests
+examples/           python-uv  go  node  pre-build   (fixture consumers run by self-test)
+tests/              bump-pin, build-args and pre-build unit tests
 ```
 
 ## Quick start: a service repository's whole workflow
@@ -128,6 +128,8 @@ Optional secrets (through `secrets: inherit`): `MINCA_CI_APP_ID`,
 | `push` | boolean | `true` | Push after the smoke test. A `pull_request` run never pushes |
 | `platforms` | string | `linux/amd64` | One platform (a loaded, smoke-tested image is single-platform) |
 | `build-args` | string | `""` | Newline-separated `NAME=value` lines for the Docker build (1.2.0+). Not for secrets; see "Build args" |
+| `pre-build` | string | `""` | Script run in `working-directory` before the build (1.3.0+); see "Pre-build" |
+| `pre-build-role-arn` | string | `""` | IAM role assumed through OIDC for the pre-build step only (1.3.0+) |
 | `pool` | `ci` \| `large` | `ci` | Runner pool |
 
 | Output | Example |
@@ -155,6 +157,36 @@ start with `BUILDKIT_` or contain `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
 may be empty and may contain `=`, commas and inner spaces, but not a double quote
 or leading/trailing whitespace (the build action's list parser would rewrite it).
 Comments are not supported.
+
+#### Pre-build (v1.3.0+)
+
+`pre-build` names a script of the calling repository, relative to `working-directory`,
+that runs once before the build, in `working-directory` of the checkout. Its job is to
+put verified inputs into the build context (a model, a dataset) so the image carries
+them instead of downloading them at start. With both inputs empty (the default) the
+step does not exist and nothing changes for a caller.
+
+- **Fail closed.** A non-zero exit stops the workflow before anything is built or
+  pushed. The script, not the workflow, owns the verification (checksums).
+- **Path rules.** `pre-build` is a relative path of letters, digits, `_`, `.`, `-` and
+  `/`, with no `..`, no empty or `.` segment and no leading `-`; it must be a regular
+  file that, with symlinks resolved, stays inside the checkout. Anything else is refused
+  before the script is looked at (`actions/pre-build/validate-pre-build.sh`).
+- **AWS session.** `pre-build-role-arn` (an IAM role ARN) is assumed through OIDC for
+  that step alone. The credentials reach the script as `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` (masked) and are not written to the
+  job environment: the build, the smoke test and the ECR login never see them. The role
+  needs a trust policy that names the calling repository and ref, like the push role.
+  Give it read access to the inputs and nothing else.
+- **Pull requests get no credentials.** On `pull_request` and `pull_request_target` the
+  role is not assumed (a fork can never reach AWS) and the script still runs, without
+  `AWS_*` variables. It sees `GITHUB_EVENT_NAME` and decides what that means; a build
+  that needs the inputs must degrade explicitly on a pull request and refuse to on any
+  other event.
+- **Not for secrets.** What the script puts in the build context ends up in the image
+  (or its layers). Do not fetch a credential into it.
+- **Trust.** The script is code of the branch being built. That is why the role's trust
+  policy, not this input, decides which refs may read.
 
 ### `promote.yml`
 
@@ -184,6 +216,7 @@ request); retries a lost race up to 5 times with rebase; in `commit` mode moves
 |---|---|---|
 | `setup-toolchain` | `toolchain`, `version`, `working-directory` | uv / Poetry / Go / Node plus go-task, with caching |
 | `ecr-login` | `role-arn`, `region` | OIDC assume-role and `docker login` to ECR; output `registry` |
+| `pre-build` | `script`, `role-arn`, `region`, `working-directory` | Validate and run one script before the build, with an optional step-scoped OIDC session (no session on pull requests) |
 | `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `working-directory`, `smoke`, `push`, `platforms`, `build-args`, `taskfiles-dir` | Build and load, `task image:smoke`, push the same image; output `digest` |
 | `bump-pin` | `repo`, `path`, `service`, `tag`, `digest`, `mode`, `token` | Edit `pins.yaml`, commit or open a PR, retry loop |
 
@@ -356,9 +389,10 @@ Everything self-test runs, runnable locally:
 ```sh
 actionlint
 uvx zizmor --min-severity low .
-shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh
+shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh tests/*/fixtures/*.sh examples/*/pre-build.sh
 bash tests/bump-pin/test_bump_pin.sh           # needs yq v4
 bash tests/build-args/test_validate_build_args.sh
+bash tests/pre-build/test_validate_pre_build.sh
 bash .github/scripts/chart-check.sh            # needs helm, helm-unittest, kubeconform
 cd examples/python-uv && DELIVERY_TASKFILES=$PWD/../../taskfiles task setup lint typecheck arch test
 ```

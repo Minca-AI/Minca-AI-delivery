@@ -1,0 +1,15 @@
+# Fixture consumer of image.yml's pre-build input. Only the contract target the image job calls.
+version: '3'
+
+tasks:
+  image:smoke:
+    desc: The image carries the file the pre-build script generated
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - |
+        got="$(docker run --rm "{{.IMAGE}}")"
+        if [ "$got" != "made by pre-build" ]; then
+          echo "image:smoke: got '$got', want 'made by pre-build'" >&2; exit 1
+        fi
+        echo "image:smoke: $got"
