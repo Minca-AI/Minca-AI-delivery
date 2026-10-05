@@ -241,7 +241,11 @@ cannot reach the kubelet, the container runtime socket or system directories. Th
 land on a node that has the directory: pair it with `nodeSelector` and `tolerations`
 (Fargate has no host, so a pod that names a hostPath cannot run there). `type` defaults to
 `Directory`, which makes the pod fail to start when the path is missing; the create-if-absent
-types are not accepted. The volume is named `hostpath-<name>`.
+types are not accepted. The volume is named `hostpath-<name>`. Names must be unique, and a
+`mountPath` must not collide with another mount of the pod (`/tmp`, a persistence path). hostPath
+volumes do not take `fsGroup`: the files on the node must be readable by the container user
+(world-readable, `a+rX`). A namespace that enforces the baseline or restricted Pod Security
+Standard rejects hostPath volumes; use a namespace without that enforcement.
 
 | Value | Type | Default | Purpose |
 |---|---|---|---|

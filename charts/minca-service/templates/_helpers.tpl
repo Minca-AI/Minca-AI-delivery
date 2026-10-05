@@ -172,7 +172,16 @@ volumes:
       claimName: {{ .root.Values.persistence.existingClaim }}
 {{- end }}
 {{- if .persistent }}
+{{- $seen := dict }}
 {{- range .root.Values.hostPathMounts }}
+{{- /* The schema enforces both checks too; repeating them here keeps the confinement when a caller renders with --skip-schema-validation, and names a duplicate (which a schema cannot express) before the apiserver does. */}}
+{{- if not (regexMatch "^/opt/minca(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$" .hostPath) }}
+{{- fail (printf "values.hostPathMounts[%s].hostPath must be a path under /opt/minca without . or .. segments, got %q" .name .hostPath) }}
+{{- end }}
+{{- if hasKey $seen .name }}
+{{- fail (printf "values.hostPathMounts has a duplicate name %q" .name) }}
+{{- end }}
+{{- $_ := set $seen .name true }}
   - name: hostpath-{{ .name }}
     hostPath:
       path: {{ .hostPath }}

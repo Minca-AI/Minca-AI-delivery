@@ -328,6 +328,59 @@ tests:
       - failedTemplate:
           errorPattern: "hostPath"
 
+  - it: refuses the bare /opt/minca, dot-directories and look-alike prefixes
+    set:
+      hostPathMounts:
+        - name: root
+          hostPath: /opt/minca
+          mountPath: /root-ro
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses a dot-directory under /opt/minca
+    set:
+      hostPathMounts:
+        - name: hidden
+          hostPath: /opt/minca/.ssh
+          mountPath: /hidden
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses a look-alike prefix
+    set:
+      hostPathMounts:
+        - name: evil
+          hostPath: /opt/minca-evil/x
+          mountPath: /evil
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses a parent segment in the middle of the path
+    set:
+      hostPathMounts:
+        - name: mid
+          hostPath: /opt/minca/a/../b
+          mountPath: /mid
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses two mounts with the same name
+    set:
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/a
+          mountPath: /models/a
+        - name: model
+          hostPath: /opt/minca/models/b
+          mountPath: /models/b
+    asserts:
+      - failedTemplate:
+          errorMessage: 'values.hostPathMounts has a duplicate name "model"'
+
   - it: refuses a type that would create the directory on the node
     set:
       hostPathMounts:
