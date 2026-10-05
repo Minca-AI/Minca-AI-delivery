@@ -125,8 +125,9 @@ args:
 
 {{/*
 Volumes and mounts. Both take a dict: "root" is the chart context, "persistent" is
-true only for the Deployment, so the optional persistence claim is never mounted
-by the migration Job.
+true only for the Deployment, so the optional persistence claim and the read-only
+hostPathMounts are never mounted by the migration Job. hostPathMounts always render
+readOnly: true; the schema confines hostPath to /opt/minca.
 */}}
 {{- define "minca-service.persistenceOn" -}}
 {{- if and .persistent .root.Values.persistence.enabled -}}
@@ -151,6 +152,13 @@ volumeMounts:
     subPath: {{ . }}
     {{- end }}
 {{- end }}
+{{- if .persistent }}
+{{- range .root.Values.hostPathMounts }}
+  - name: hostpath-{{ .name }}
+    mountPath: {{ .mountPath }}
+    readOnly: true
+{{- end }}
+{{- end }}
 {{- end -}}
 
 {{- define "minca-service.volumes" -}}
@@ -162,6 +170,14 @@ volumes:
   - name: persistence
     persistentVolumeClaim:
       claimName: {{ .root.Values.persistence.existingClaim }}
+{{- end }}
+{{- if .persistent }}
+{{- range .root.Values.hostPathMounts }}
+  - name: hostpath-{{ .name }}
+    hostPath:
+      path: {{ .hostPath }}
+      type: {{ .type | default "Directory" }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

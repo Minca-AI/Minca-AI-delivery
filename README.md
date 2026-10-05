@@ -232,6 +232,24 @@ volume), so the chart creates no storage objects.
 | `persistence.mountPath` | string | `""` | Absolute path in the container; required when enabled |
 | `persistence.subPath` | string | `""` | Optional sub-directory of the volume to mount |
 
+Host path mounts (1.4.0+): off by default (`hostPathMounts: []`). Each entry mounts a
+directory (or file) of the NODE into the Deployment's container, read-only, for data baked
+into the node image (a model in the AMI) so the pod does not download it at startup. The
+migration Job never mounts them, and there is no setting to make one writable. The schema
+confines `hostPath` to `/opt/minca/<dir>...` (no `..`, no dot-directories), so a values file
+cannot reach the kubelet, the container runtime socket or system directories. The pod must
+land on a node that has the directory: pair it with `nodeSelector` and `tolerations`
+(Fargate has no host, so a pod that names a hostPath cannot run there). `type` defaults to
+`Directory`, which makes the pod fail to start when the path is missing; the create-if-absent
+types are not accepted. The volume is named `hostpath-<name>`.
+
+| Value | Type | Default | Purpose |
+|---|---|---|---|
+| `hostPathMounts[].name` | string | required | DNS label; the volume is `hostpath-<name>` |
+| `hostPathMounts[].hostPath` | string | required | Path on the node, under `/opt/minca/` |
+| `hostPathMounts[].mountPath` | string | required | Absolute path in the container |
+| `hostPathMounts[].type` | `Directory` or `File` | `Directory` | Kubernetes hostPath type check |
+
 Migration env (1.3.0+): `migration.env` (map, default `{}`) is rendered as the
 migration Job's container `env`, which overrides the same keys from `env` and
 `secretEnv`. It is for a migration that runs under a different identity than the

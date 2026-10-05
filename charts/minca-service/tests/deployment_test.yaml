@@ -227,3 +227,123 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "values.persistence.mountPath is required when persistence.enabled"
+
+  - it: mounts no host path by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: hostpath-model
+          any: true
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 1
+
+  - it: mounts a host directory read-only into the container
+    set:
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/example/v1
+          mountPath: /models/example
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: hostpath-model
+            hostPath:
+              path: /opt/minca/models/example/v1
+              type: Directory
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: hostpath-model
+            mountPath: /models/example
+            readOnly: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: passes the host path type through and mounts several host paths
+    set:
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/example/v1
+          mountPath: /models/example
+          type: File
+        - name: data
+          hostPath: /opt/minca/data
+          mountPath: /data-ro
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: hostpath-model
+            hostPath:
+              path: /opt/minca/models/example/v1
+              type: File
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: hostpath-data
+            hostPath:
+              path: /opt/minca/data
+              type: Directory
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 3
+
+  - it: keeps the host path mount next to persistence
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: example-cases
+      persistence.mountPath: /data/cases
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/example/v1
+          mountPath: /models/example
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 3
+
+  - it: refuses a host path outside /opt/minca
+    set:
+      hostPathMounts:
+        - name: sock
+          hostPath: /var/run/docker.sock
+          mountPath: /sock
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses a host path that climbs out of /opt/minca
+    set:
+      hostPathMounts:
+        - name: escape
+          hostPath: /opt/minca/../etc
+          mountPath: /escape
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostPath"
+
+  - it: refuses a type that would create the directory on the node
+    set:
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/example/v1
+          mountPath: /models/example
+          type: DirectoryOrCreate
+    asserts:
+      - failedTemplate:
+          errorPattern: "type"
+
+  - it: refuses a host path mount without a mount path
+    set:
+      hostPathMounts:
+        - name: model
+          hostPath: /opt/minca/models/example/v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "mountPath"
