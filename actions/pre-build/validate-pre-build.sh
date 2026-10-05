@@ -11,8 +11,12 @@
 #   - the script is a relative path of plain characters, no `..`, no leading `-` or `/`, that names a
 #     regular file which, once symlinks are resolved, still lives inside WORKDIR;
 #   - the role is an IAM role ARN;
-#   - a pull request never gets credentials: the script still runs, without them, and decides for
-#     itself what that means (a build that needs them must degrade explicitly or fail on its own).
+#   - the session is assumed only on an allow-list of events whose code and token belong to the
+#     repository itself (push, workflow_dispatch, schedule, release). Every other event (a pull
+#     request, workflow_run, issue_comment, merge_group, repository_dispatch, ...) runs the script
+#     WITHOUT credentials, and the script decides for itself what that means (a build that needs
+#     them must degrade explicitly on those events and fail on the others);
+#   - WORKDIR has no `..` segment.
 set -euo pipefail
 
 SCRIPT="${SCRIPT:-}"
@@ -26,6 +30,14 @@ fault() { echo "::error::pre-build: $1"; faults=$((faults + 1)); }
 write_outputs() { # <run> <assume>
   echo "run=$1" >> "${GITHUB_OUTPUT:-/dev/null}"
   echo "assume=$2" >> "${GITHUB_OUTPUT:-/dev/null}"
+}
+
+check_workdir() {
+  local seg
+  IFS='/' read -r -a wsegments <<<"$WORKDIR"
+  for seg in "${wsegments[@]}"; do
+    if [[ "$seg" == ".." ]]; then fault "working-directory must not contain '..' segments"; return; fi
+  done
 }
 
 check_script() {
@@ -54,7 +66,7 @@ check_script() {
 
 check_role() {
   # An IAM role ARN: partition, 12-digit account, path and name of allowed characters.
-  if ! [[ "$ROLE_ARN" =~ ^arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]{1,255}$ ]]; then
+  if ! [[ "$ROLE_ARN" =~ ^arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]{1,255}$ ]] || [[ "$ROLE_ARN" == *..* ]]; then
     fault "pre-build-role-arn is not an IAM role ARN"
   fi
 }
@@ -67,6 +79,7 @@ main() {
     write_outputs false false
     return
   fi
+  check_workdir
   check_script
   [[ -z "$ROLE_ARN" ]] || check_role
   if ((faults > 0)); then echo "pre-build: $faults fault(s), refusing to build"; exit 1; fi
@@ -74,8 +87,8 @@ main() {
   local assume=false
   if [[ -n "$ROLE_ARN" ]]; then
     case "$EVENT" in
-      pull_request|pull_request_target) echo "pre-build: $EVENT run, the script runs WITHOUT AWS credentials" ;;
-      *) assume=true ;;
+      push|workflow_dispatch|schedule|release) assume=true ;;
+      *) echo "pre-build: a $EVENT run never gets AWS credentials: the script runs WITHOUT them" ;;
     esac
   fi
   echo "pre-build: $SCRIPT (aws session: $assume)"

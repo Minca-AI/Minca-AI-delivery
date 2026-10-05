@@ -27,11 +27,11 @@ OUT=""
 RC=0
 OUTPUTS="$TMP/github_output"
 
-# run_validate <script> <role> <event>: sets OUT (stdout+stderr), RC and the OUTPUTS file.
+# run_validate <script> <role> <event> [<workdir>]: sets OUT (stdout+stderr), RC and the OUTPUTS file.
 run_validate() {
   : > "$OUTPUTS"
   set +e
-  OUT="$(SCRIPT="$1" ROLE_ARN="$2" EVENT="$3" WORKDIR="$CHECKOUT" GITHUB_OUTPUT="$OUTPUTS" bash "$VALIDATOR" 2>&1)"
+  OUT="$(SCRIPT="$1" ROLE_ARN="$2" EVENT="$3" WORKDIR="${4:-$CHECKOUT}" GITHUB_OUTPUT="$OUTPUTS" bash "$VALIDATOR" 2>&1)"
   RC=$?
   set -e
 }
@@ -49,9 +49,9 @@ expect_ok() {
   fi
 }
 
-# expect_fail <desc> <script> <role> <event> [<substring>]
+# expect_fail <desc> <script> <role> <event> [<substring> [<workdir>]]
 expect_fail() {
-  run_validate "$2" "$3" "$4"
+  run_validate "$2" "$3" "$4" "${6:-}"
   if [[ "$RC" -eq 1 && "$OUT" == *"::error::pre-build:"* && "$OUT" == *"refusing to build"* && "$OUT" == *"${5:-}"* && ! -s "$OUTPUTS" ]]; then
     pass "$1"
   else
@@ -64,8 +64,12 @@ expect_fail "a role without a script is refused" "" "$ROLE" push "pre-build is e
 expect_ok "a plain script runs, no session" "tools/fetch.sh" "" push true false
 expect_ok "a script with a role assumes the session on push" "tools/fetch.sh" "$ROLE" push true true
 expect_ok "a script with a role assumes the session on workflow_dispatch" "tools/fetch.sh" "$ROLE" workflow_dispatch true true
-expect_ok "a pull_request never assumes the role" "tools/fetch.sh" "$ROLE" pull_request true false
-expect_ok "a pull_request_target never assumes the role" "tools/fetch.sh" "$ROLE" pull_request_target true false
+expect_ok "a script with a role assumes the session on schedule" "tools/fetch.sh" "$ROLE" schedule true true
+expect_ok "a script with a role assumes the session on release" "tools/fetch.sh" "$ROLE" release true true
+# The session is assumed on an allow-list of events: every other event runs the script without it.
+for event in pull_request pull_request_target workflow_run issue_comment pull_request_review pull_request_review_comment merge_group repository_dispatch workflow_call discussion ""; do
+  expect_ok "event '$event' never assumes the role" "tools/fetch.sh" "$ROLE" "$event" true false
+done
 expect_fail "an absolute path is refused" "/etc/passwd" "" push "relative path"
 expect_fail "a parent segment is refused" "tools/../tools/fetch.sh" "" push ".."
 expect_fail "a leading parent segment is refused" "../outside.sh" "" push "relative path"
@@ -83,9 +87,11 @@ if [[ "$SYMLINK_OK" == true ]]; then
 else
   echo "[SKIP] symlink case: this host cannot create symlinks"
 fi
+expect_fail "a working directory with a parent segment is refused" "tools/fetch.sh" "" push "working-directory" "$CHECKOUT/../checkout"
 expect_fail "a role that is not an ARN is refused" "tools/fetch.sh" "gnp-dev-role" push "not an IAM role ARN"
 expect_fail "a user ARN is refused" "tools/fetch.sh" "arn:aws:iam::123456789012:user/someone" push "not an IAM role ARN"
 expect_fail "an ARN with a short account id is refused" "tools/fetch.sh" "arn:aws:iam::1234:role/x" push "not an IAM role ARN"
+expect_fail "an ARN with a parent segment is refused" "tools/fetch.sh" "arn:aws:iam::123456789012:role/a/../b" push "not an IAM role ARN"
 expect_fail "an ARN with a space is refused" "tools/fetch.sh" "arn:aws:iam::123456789012:role/a b" push "not an IAM role ARN"
 
 echo "passed=$PASSED failed=$FAILED"

@@ -14,10 +14,15 @@ inputs:
   role-arn:
     description: >-
       IAM role assumed through GitHub OIDC for this step only. Its credentials are handed to the
-      script as environment variables and are NOT exported to the following steps. Skipped on
-      pull_request events, which never get AWS credentials.
+      script as environment variables and are NOT exported to the following steps. Assumed only
+      on push, workflow_dispatch, schedule and release events; every other event (pull requests
+      included) runs the script without credentials.
     required: false
     default: ""
+  role-duration-seconds:
+    description: Lifetime of the session (900 to 3600). It must cover the whole script
+    required: false
+    default: "900"
   region:
     description: AWS region of the STS call
     required: false
@@ -48,11 +53,28 @@ runs:
         role-to-assume: ${{ inputs.role-arn }}
         aws-region: ${{ inputs.region }}
         role-session-name: prebuild-${{ github.run_id }}-${{ github.run_attempt }}
+        role-duration-seconds: ${{ inputs.role-duration-seconds }}
         # Step-scoped credentials: returned as (masked) outputs for the next step, never written
         # to the job environment, so the image build and the push session never see them.
         output-credentials: true
         output-env-credentials: false
         mask-aws-account-id: true
+
+    # The credentials must exist only as outputs of the assume step. If a future version of the
+    # pinned action ignored output-env-credentials, they would now be in the job environment, where
+    # the build and the push would inherit them: refuse to go on.
+    - name: Check the session is scoped to the next step
+      if: steps.plan.outputs.assume == 'true'
+      shell: bash
+      env:
+        HAVE_KEY: ${{ steps.aws.outputs.aws-access-key-id != '' }}
+      run: |
+        for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; do
+          if [ -n "${!v:-}" ]; then
+            echo "::error::$v leaked into the job environment: the AWS session is not step-scoped"; exit 1
+          fi
+        done
+        [ "$HAVE_KEY" = true ] || { echo "::error::the assume step returned no credentials"; exit 1; }
 
     - name: Run the pre-build script
       if: steps.plan.outputs.run == 'true'
@@ -65,6 +87,19 @@ runs:
         AWS_SESSION_TOKEN: ${{ steps.aws.outputs.aws-session-token }}
         AWS_DEFAULT_REGION: ${{ inputs.region }}
       run: |
-        # An absent session leaves the three variables empty, which the AWS CLI treats as unset.
+        # An absent session leaves the three variables empty: unset them.
         if [ -z "$AWS_ACCESS_KEY_ID" ]; then unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; fi
-        exec bash "./$SCRIPT"
+        # The script is code of the branch being built. Do not hand it a way to mint or find any
+        # other AWS identity: the runner's OIDC token endpoint and the ambient AWS credential sources.
+        # (The instance metadata service is the runner host's: block or hop-limit it there.)
+        # `bash` runs it: the executable bit is not needed.
+        drop=(
+          ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN
+          AWS_ROLE_ARN AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_SESSION_NAME
+          AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+          AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+          AWS_CONTAINER_AUTHORIZATION_TOKEN AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE
+        )
+        unset_args=()
+        for v in "${drop[@]}"; do unset_args+=(-u "$v"); done
+        exec env "${unset_args[@]}" bash "./$SCRIPT"

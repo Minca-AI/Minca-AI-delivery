@@ -12,8 +12,8 @@
 #
 # pre-build runs one script of the repository before the build, to put verified inputs (a model)
 # into the build context. pre-build-role-arn gives that step, and only that step, a read-only AWS
-# session; a pull request never gets it. Both default to "": nothing changes for a caller that sets
-# neither.
+# session; only push, workflow_dispatch, schedule and release events get it (a pull request never
+# does). Both default to "": nothing changes for a caller that sets neither.
 name: image
 
 on:
@@ -52,11 +52,11 @@ on:
         type: string
         default: ""
       pre-build:
-        description: "Script run in working-directory before the build (1.3.0+): a relative path inside the checkout. It must fail closed. Validated by actions/pre-build"
+        description: "Script run in working-directory before the build (1.3.0+): a relative path of a file that stays inside working-directory. It must fail closed. Validated by actions/pre-build"
         type: string
         default: ""
       pre-build-role-arn:
-        description: "IAM role assumed through OIDC for the pre-build step only (1.3.0+). Not exported to the build or the push. A pull_request run never assumes it"
+        description: "IAM role assumed through OIDC for the pre-build step only (1.3.0+). Not exported to the build or the push. Assumed only on push, workflow_dispatch, schedule and release events"
         type: string
         default: ""
       pool:

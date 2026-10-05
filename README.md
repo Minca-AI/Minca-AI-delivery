@@ -170,19 +170,32 @@ step does not exist and nothing changes for a caller.
   pushed. The script, not the workflow, owns the verification (checksums).
 - **Path rules.** `pre-build` is a relative path of letters, digits, `_`, `.`, `-` and
   `/`, with no `..`, no empty or `.` segment and no leading `-`; it must be a regular
-  file that, with symlinks resolved, stays inside the checkout. Anything else is refused
-  before the script is looked at (`actions/pre-build/validate-pre-build.sh`).
+  file that, with symlinks resolved, stays inside `working-directory`; the working
+  directory itself has no `..` segment. Anything else is refused before the script is
+  looked at (`actions/pre-build/validate-pre-build.sh`). The script is run with `bash`,
+  so it needs no executable bit.
 - **AWS session.** `pre-build-role-arn` (an IAM role ARN) is assumed through OIDC for
-  that step alone. The credentials reach the script as `AWS_ACCESS_KEY_ID`,
-  `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` (masked) and are not written to the
-  job environment: the build, the smoke test and the ECR login never see them. The role
-  needs a trust policy that names the calling repository and ref, like the push role.
-  Give it read access to the inputs and nothing else.
-- **Pull requests get no credentials.** On `pull_request` and `pull_request_target` the
-  role is not assumed (a fork can never reach AWS) and the script still runs, without
-  `AWS_*` variables. It sees `GITHUB_EVENT_NAME` and decides what that means; a build
-  that needs the inputs must degrade explicitly on a pull request and refuse to on any
-  other event.
+  that step alone, for 15 minutes. The credentials reach the script as
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` (masked) and are
+  not written to the job environment (the action fails the job if they are): the build,
+  the smoke test and the ECR login never see them. The role needs a trust policy that
+  names the calling repository and ref, like the push role. Give it read access to the
+  inputs and nothing else.
+- **Which events get the session.** An allow-list: `push`, `workflow_dispatch`,
+  `schedule` and `release`. Every other event (`pull_request`, `pull_request_target`,
+  `workflow_run`, `issue_comment`, `merge_group`, `repository_dispatch`, ...) runs the
+  script WITHOUT `AWS_*` variables. The script sees `GITHUB_EVENT_NAME` and decides what
+  that means: a build that needs the inputs must degrade explicitly on those events and
+  refuse to on any other.
+- **What the script does not get.** The runner's OIDC token endpoint
+  (`ACTIONS_ID_TOKEN_REQUEST_*`) and the ambient AWS credential sources
+  (`AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_PROFILE`, the shared credentials
+  and config files, the `AWS_CONTAINER_*` variables) are removed from its environment,
+  so it cannot mint another identity from the job's token. This is a deny-list on the
+  environment, not a sandbox: the script is a process on the runner host and can still
+  reach whatever the host can (instance metadata included). The trust policy of the role
+  is the real gate; on self-hosted runners block or hop-limit the metadata service and do
+  not run fork pull requests on the AWS-connected pools.
 - **Not for secrets.** What the script puts in the build context ends up in the image
   (or its layers). Do not fetch a credential into it.
 - **Trust.** The script is code of the branch being built. That is why the role's trust

@@ -136,6 +136,10 @@ jobs:
     name: pre-build action runs the script
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # id-token: write puts the OIDC token endpoint in the step environment: the script must not see it.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -195,6 +199,7 @@ jobs:
           FAILING: ${{ steps.failing.outcome }}
           TRAVERSAL: ${{ steps.traversal.outcome }}
         run: |
+          [ -f tests/pre-build/fixtures/ran-and-failed ] || { echo "::error::the failing script never ran: the failure came from somewhere else"; exit 1; }
           [ "$FAILING" = failure ] || { echo "::error::a failing pre-build script did not fail the action (outcome=$FAILING)"; exit 1; }
           [ "$TRAVERSAL" = failure ] || { echo "::error::pre-build accepted a path outside the working directory (outcome=$TRAVERSAL)"; exit 1; }
 
