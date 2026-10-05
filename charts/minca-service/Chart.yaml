@@ -8,8 +8,8 @@ description: >-
 type: application
 # The chart version is the contract version of values.yaml (see values.schema.json).
 # A values file valid for 1.x must render under every 1.y; a breaking change is 2.0.0.
-version: 1.3.0
-appVersion: "1.3.0"
+version: 1.4.0
+appVersion: "1.4.0"
 home: https://github.com/Minca-AI/Minca-AI-delivery
 sources:
   - https://github.com/Minca-AI/Minca-AI-delivery/tree/main/charts/minca-service

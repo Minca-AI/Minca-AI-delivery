@@ -154,6 +154,20 @@
         "subPath": {"type": "string"}
       }
     },
+    "hostPathMounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "hostPath", "mountPath"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$"},
+          "hostPath": {"type": "string", "pattern": "^/opt/minca(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$"},
+          "mountPath": {"type": "string", "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$"},
+          "type": {"enum": ["Directory", "File"]}
+        }
+      }
+    },
     "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
     "podAnnotations": {"type": "object", "additionalProperties": {"type": "string"}},
     "podLabels": {"type": "object", "additionalProperties": {"type": "string"}},

@@ -125,8 +125,9 @@ args:
 
 {{/*
 Volumes and mounts. Both take a dict: "root" is the chart context, "persistent" is
-true only for the Deployment, so the optional persistence claim is never mounted
-by the migration Job.
+true only for the Deployment, so the optional persistence claim and the read-only
+hostPathMounts are never mounted by the migration Job. hostPathMounts always render
+readOnly: true; the schema confines hostPath to /opt/minca.
 */}}
 {{- define "minca-service.persistenceOn" -}}
 {{- if and .persistent .root.Values.persistence.enabled -}}
@@ -151,6 +152,13 @@ volumeMounts:
     subPath: {{ . }}
     {{- end }}
 {{- end }}
+{{- if .persistent }}
+{{- range .root.Values.hostPathMounts }}
+  - name: hostpath-{{ .name }}
+    mountPath: {{ .mountPath }}
+    readOnly: true
+{{- end }}
+{{- end }}
 {{- end -}}
 
 {{- define "minca-service.volumes" -}}
@@ -162,6 +170,23 @@ volumes:
   - name: persistence
     persistentVolumeClaim:
       claimName: {{ .root.Values.persistence.existingClaim }}
+{{- end }}
+{{- if .persistent }}
+{{- $seen := dict }}
+{{- range .root.Values.hostPathMounts }}
+{{- /* The schema enforces both checks too; repeating them here keeps the confinement when a caller renders with --skip-schema-validation, and names a duplicate (which a schema cannot express) before the apiserver does. */}}
+{{- if not (regexMatch "^/opt/minca(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$" .hostPath) }}
+{{- fail (printf "values.hostPathMounts[%s].hostPath must be a path under /opt/minca without . or .. segments, got %q" .name .hostPath) }}
+{{- end }}
+{{- if hasKey $seen .name }}
+{{- fail (printf "values.hostPathMounts has a duplicate name %q" .name) }}
+{{- end }}
+{{- $_ := set $seen .name true }}
+  - name: hostpath-{{ .name }}
+    hostPath:
+      path: {{ .hostPath }}
+      type: {{ .type | default "Directory" }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

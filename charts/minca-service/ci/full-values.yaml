@@ -42,3 +42,11 @@ persistence:
   enabled: true
   existingClaim: codifier-data
   mountPath: /data
+nodeSelector:
+  dedicated: example
+tolerations:
+  - {key: dedicated, operator: Equal, value: example, effect: NoSchedule}
+hostPathMounts:
+  - name: example-model
+    hostPath: /opt/minca/models/example/v1
+    mountPath: /models/example

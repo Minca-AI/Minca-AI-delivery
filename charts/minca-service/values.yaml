@@ -122,6 +122,18 @@ persistence:
   mountPath: ""
   subPath: ""
 
+# Read-only host directories (1.4.0+), for data baked into the node image (for example a model
+# in the AMI) so the pod does not download it at startup. Mounted into the Deployment's
+# container only (never the migration Job), ALWAYS read-only: there is no knob to make it
+# writable. hostPath is restricted by the schema to /opt/minca/<dir>... so it cannot reach
+# the kubelet, container runtime or system directories. The pod still needs a nodeSelector and
+# toleration to land on a node that has the directory; Fargate has no host to mount from.
+#   - name: cross-encoder-model        # volume hostpath-<name>
+#     hostPath: /opt/minca/models/gnp-cross-encoder/xenc-v3
+#     mountPath: /models/cross-encoder
+#     type: Directory                  # Directory (default) or File; the pod fails to start if absent
+hostPathMounts: []
+
 terminationGracePeriodSeconds: 30
 podAnnotations: {}
 podLabels: {}
