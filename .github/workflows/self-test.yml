@@ -72,6 +72,31 @@ jobs:
             echo "$fragment: ok"
           done
 
+  # The repository is public: anything committed, on any commit, is readable by
+  # anyone. The checkout fetches every branch (fetch-depth: 0) and `gitleaks git`
+  # scans every non-merge commit of all of them, not only the pull request's
+  # diff, so a secret pushed to any branch earlier still fails the check. The
+  # history is small, so a full scan takes seconds.
+  gitleaks:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks
+        run: >-
+          bash .github/scripts/install-tool.sh gitleaks
+          https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
+      # --redact keeps a finding's value out of the public job log.
+      - name: Scan every commit for secrets
+        run: gitleaks git --redact --no-banner --verbose .
+
   chart:
     name: chart (lint, unittest, kubeconform)
     runs-on: ubuntu-latest
