@@ -25,6 +25,10 @@ anyone, and anyone can open a pull request. The rules below follow from that.
    a URL. Secrets reach reusable workflows only through `secrets: inherit`.
 7. **Releases are gated.** Chart publishing runs only in the `release`
    environment, which requires reviewer approval, and only from this repository.
+8. **No secret in the history.** The self-test job `gitleaks (full history)` scans
+   every non-merge commit of every branch on each pull request and push to
+   `main`, and fails on any finding. A secret that reaches a commit is public for
+   good: rotate it first, then rewrite the history.
 
 ## What an org owner must configure (cannot be done from here)
 
@@ -35,7 +39,8 @@ anyone, and anyone can open a pull request. The rules below follow from that.
   public repository never receives them.
 - A tag ruleset on this repository restricting who can create `v*` and
   `minca-service-*` tags, since a tag is a release.
-- Branch protection on `main` requiring the self-test checks and a code-owner review.
+- Branch protection on `main` requiring the self-test checks (including
+  `gitleaks (full history)`) and a code-owner review.
 - Actions setting "Fork pull request workflows from outside collaborators":
   require approval for all outside collaborators.
 
