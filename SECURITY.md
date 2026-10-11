@@ -12,8 +12,10 @@ anyone, and anyone can open a pull request. The rules below follow from that.
    `chart-release.yml` run on `ubuntu-latest`. A fork's pull request runs this
    repository's workflows, so a self-hosted label here would give anyone code
    execution on our AWS-connected runners. The reusable workflows default to the
-   self-hosted pools for their callers; the self-test redirects them with
-   `runs-on-override`, which exists for that purpose only.
+   self-hosted pools for their callers (a caller redirects them through its own
+   `RUNNER_CI` / `RUNNER_LARGE` variables, see README "Runner pools"); the
+   self-test redirects them with `runs-on-override`, which exists for that
+   purpose only. `check-runner-pools.sh` enforces both in the self-test.
 3. **No `pull_request_target`.** It runs with a write token and secrets in the
    context of untrusted code.
 4. **Third-party actions pinned by full commit SHA**, with the version in a

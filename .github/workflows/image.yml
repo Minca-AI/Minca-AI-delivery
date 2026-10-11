@@ -60,7 +60,7 @@ on:
         type: string
         default: ""
       pool:
-        description: "Runner pool: ci | large"
+        description: "Runner pool: ci | large. The labels come from the caller's RUNNER_CI / RUNNER_LARGE variables when set (1.4.0+), else [self-hosted, ci] / [self-hosted, large]"
         type: string
         default: ci
       runs-on-override:
@@ -84,7 +84,7 @@ permissions:
 jobs:
   build:
     name: build, smoke, push
-    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON(vars.RUNNER_LARGE || '["self-hosted","large"]') || fromJSON(vars.RUNNER_CI || '["self-hosted","ci"]')) }}
     # The self-hosted fleet reaps runners after 30 minutes (design R2).
     timeout-minutes: 25
     permissions:

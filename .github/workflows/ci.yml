@@ -8,6 +8,13 @@
 # repository (at the exact commit of this workflow) at `delivery/`. Keeping them
 # side by side, never nested, stops the caller's linters and test collectors
 # from walking into our files.
+#
+# Runner pools (1.4.0+): `pool` picks ci or large. The labels come from the
+# CALLER repository's variables RUNNER_CI / RUNNER_LARGE (JSON arrays of runner
+# labels, e.g. '["ubuntu-latest"]') when they are set, and fall back to the
+# fleet pools [self-hosted, ci] / [self-hosted, large]. Setting the two
+# variables moves a repository to GitHub-hosted runners while the fleet is
+# down; deleting them moves it back. No workflow change in either direction.
 name: ci
 
 on:
@@ -26,7 +33,7 @@ on:
         type: string
         default: "."
       pool:
-        description: "Runner pool: ci -> [self-hosted, ci], large -> [self-hosted, large]"
+        description: "Runner pool: ci | large. The labels come from the caller's RUNNER_CI / RUNNER_LARGE variables when set (1.4.0+), else [self-hosted, ci] / [self-hosted, large]"
         type: string
         default: ci
       targets:
@@ -48,33 +55,13 @@ permissions:
 jobs:
   plan:
     name: plan
-    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON(vars.RUNNER_LARGE || '["self-hosted","large"]') || fromJSON(vars.RUNNER_CI || '["self-hosted","ci"]')) }}
     timeout-minutes: 10
     outputs:
       runner: ${{ steps.runner.outputs.runner }}
       large-runner: ${{ steps.runner.outputs.large }}
       targets: ${{ steps.targets.outputs.targets }}
     steps:
-      - name: Resolve runners
-        id: runner
-        env:
-          POOL: ${{ inputs.pool }}
-          OVERRIDE: ${{ inputs.runs-on-override }}
-        run: |
-          # The pool is the only runner selector. The fleet matches label sets
-          # exactly, so a free-form label would queue forever instead of failing.
-          case "$POOL" in
-            ci|large) ;;
-            *) echo "::error::pool must be 'ci' or 'large' (got '$POOL')"; exit 1 ;;
-          esac
-          if [ -n "$OVERRIDE" ]; then
-            echo "runner=$OVERRIDE" >> "$GITHUB_OUTPUT"
-            echo "large=$OVERRIDE" >> "$GITHUB_OUTPUT"
-          else
-            echo "runner=[\"self-hosted\",\"$POOL\"]" >> "$GITHUB_OUTPUT"
-            echo 'large=["self-hosted","large"]' >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,6 +75,15 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: delivery
           persist-credentials: false
+
+      - name: Resolve runners
+        id: runner
+        env:
+          POOL: ${{ inputs.pool }}
+          OVERRIDE: ${{ inputs.runs-on-override }}
+          RUNNER_CI: ${{ vars.RUNNER_CI }}
+          RUNNER_LARGE: ${{ vars.RUNNER_LARGE }}
+        run: bash "$GITHUB_WORKSPACE/delivery/.github/scripts/resolve-runners.sh"
 
       - name: Install go-task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0

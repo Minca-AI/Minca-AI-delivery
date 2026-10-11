@@ -16,7 +16,7 @@ on:
         type: string
         default: "."
       pool:
-        description: "Runner pool: ci | large"
+        description: "Runner pool: ci | large. The labels come from the caller's RUNNER_CI / RUNNER_LARGE variables when set (1.4.0+), else [self-hosted, ci] / [self-hosted, large]"
         type: string
         default: ci
       hooks:
@@ -42,7 +42,7 @@ jobs:
   guards:
     name: quality guards
     if: github.event_name == 'pull_request'
-    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]')) }}
+    runs-on: ${{ inputs.runs-on-override != '' && fromJSON(inputs.runs-on-override) || (inputs.pool == 'large' && fromJSON(vars.RUNNER_LARGE || '["self-hosted","large"]') || fromJSON(vars.RUNNER_CI || '["self-hosted","ci"]')) }}
     timeout-minutes: 15
     env:
       HAS_HOOKS_APP: ${{ secrets.MINCA_CI_APP_ID != '' }}

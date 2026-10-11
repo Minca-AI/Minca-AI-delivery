@@ -54,7 +54,7 @@ on:
         type: string
         default: main
       pool:
-        description: "Runner pool: ci | large"
+        description: "Runner pool: ci | large. The labels come from the caller's RUNNER_CI / RUNNER_LARGE variables when set (1.4.0+), else [self-hosted, ci] / [self-hosted, large]"
         type: string
         default: ci
     secrets:
@@ -71,7 +71,7 @@ permissions:
 jobs:
   promote:
     name: promote ${{ inputs.service }} to ${{ inputs.environment }}
-    runs-on: ${{ inputs.pool == 'large' && fromJSON('["self-hosted","large"]') || fromJSON('["self-hosted","ci"]') }}
+    runs-on: ${{ inputs.pool == 'large' && fromJSON(vars.RUNNER_LARGE || '["self-hosted","large"]') || fromJSON(vars.RUNNER_CI || '["self-hosted","ci"]') }}
     timeout-minutes: 10
     # One promotion per service and environment at a time, so the live tag moves
     # in the same order as the pins. A newer pending promotion of the same service
