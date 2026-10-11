@@ -4,7 +4,10 @@
 # A pull request from a fork runs this file, so a self-hosted label here would
 # hand our AWS-connected runners to anyone who opens a PR. The reusable
 # workflows default to the self-hosted pools; the fixtures below redirect them
-# with `runs-on-override`, which exists for this file only.
+# with `runs-on-override`, which exists for this file only. (A consumer redirects
+# them with its RUNNER_CI / RUNNER_LARGE variables instead; that path cannot run
+# here, this repository sets no such variable, so `runner-pool` unit-tests the
+# resolver and `static` guards the runs-on expressions.)
 #
 # The fixture consumers are the characterization tests of the published v1
 # contract: they call the workflows from THIS commit (`uses: ./...`) exactly the
@@ -56,6 +59,9 @@ jobs:
 
       - name: shellcheck
         run: shellcheck actions/*/*.sh .github/scripts/*.sh tests/*/*.sh tests/*/fixtures/*.sh examples/*/pre-build.sh
+
+      - name: Runner pools follow the contract (RUNNER_CI / RUNNER_LARGE, no self-hosted label here)
+        run: bash .github/scripts/check-runner-pools.sh
 
       - name: Install go-task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
@@ -119,6 +125,17 @@ jobs:
           persist-credentials: false
       - name: Run
         run: bash tests/build-args/test_validate_build_args.sh
+
+  runner-pool:
+    name: runner-pool unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run
+        run: bash tests/runner-pool/test_resolve_runners.sh
 
   pre-build:
     name: pre-build unit test

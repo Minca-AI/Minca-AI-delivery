@@ -16,7 +16,7 @@ actions/            setup-toolchain  ecr-login  pre-build  build-smoke-push  bum
 taskfiles/          python-uv.yml  python-poetry.yml  go.yml  node.yml
 charts/             minca-service
 examples/           python-uv  go  node  pre-build   (fixture consumers run by self-test)
-tests/              bump-pin, build-args and pre-build unit tests
+tests/              bump-pin, build-args, pre-build and runner-pool unit tests
 ```
 
 ## Quick start: a service repository's whole workflow
@@ -93,7 +93,7 @@ same locally and in CI.
 | `toolchain` | `python-uv` \| `python-poetry` \| `go` \| `node` | required | What `setup-toolchain` installs |
 | `toolchain-version` | string | from `.python-version`, `go.mod`, `.nvmrc` | Override |
 | `working-directory` | string | `.` | For monorepos |
-| `pool` | `ci` \| `large` | `ci` | `[self-hosted, ci]` or `[self-hosted, large]`; the only runner selector |
+| `pool` | `ci` \| `large` | `ci` | `[self-hosted, ci]` or `[self-hosted, large]`, or the caller's `RUNNER_CI` / `RUNNER_LARGE` variables when set (1.4.0+); see "Runner pools" |
 | `targets` | string | `lint typecheck arch test` | Targets to run, one job each. A missing optional target is skipped, a missing required one fails |
 | `integration` | boolean | `false` | Also run `test:integration` on the `large` pool |
 | `runs-on-override` | string | `""` | For this repository's self-test only |
@@ -110,7 +110,7 @@ repository declares none, and outside pull requests.
 | Input | Default | Purpose |
 |---|---|---|
 | `working-directory` | `.` | Where `.pre-commit-config.yaml` lives |
-| `pool` | `ci` | Runner pool |
+| `pool` | `ci` | Runner pool; see "Runner pools" |
 | `hooks` | `cognitive-complexity function-length dup-literal` | Hook ids to run when declared |
 
 Optional secrets (through `secrets: inherit`): `MINCA_CI_APP_ID`,
@@ -130,7 +130,7 @@ Optional secrets (through `secrets: inherit`): `MINCA_CI_APP_ID`,
 | `build-args` | string | `""` | Newline-separated `NAME=value` lines for the Docker build (1.2.0+). Not for secrets; see "Build args" |
 | `pre-build` | string | `""` | Script run in `working-directory` before the build (1.3.0+); see "Pre-build" |
 | `pre-build-role-arn` | string | `""` | IAM role assumed through OIDC for the pre-build step only (1.3.0+) |
-| `pool` | `ci` \| `large` | `ci` | Runner pool |
+| `pool` | `ci` \| `large` | `ci` | Runner pool; see "Runner pools" |
 
 | Output | Example |
 |---|---|
@@ -220,7 +220,7 @@ step does not exist and nothing changes for a caller.
 | `client` | from `Minca-AI-deploy-<CLIENT>` | Client part of the live tag |
 | `pins-path` | `environments/<environment>/pins.yaml` | |
 | `base-branch` | `main` | Deploy repository branch |
-| `pool` | `ci` | Runner pool |
+| `pool` | `ci` | Runner pool; see "Runner pools" |
 
 Secrets (`secrets: inherit`): `MINCA_CI_APP_ID`, `MINCA_CI_APP_PRIVATE_KEY`.
 
@@ -361,6 +361,34 @@ tasks:
       - uv run --frozen black --check .
 ```
 
+## Runner pools
+
+Every reusable job runs on one of the two self-hosted pools of the organization's
+runner fleet, chosen by the `pool` input: `ci` is `[self-hosted, ci]`, `large` is
+`[self-hosted, large]`. The fleet matches label sets exactly, so these two
+spellings are the only ones that start a runner.
+
+Since 1.4.0 a consuming repository can replace those labels without touching a
+workflow, through two configuration variables (repository or organization level)
+that the called workflows read from the caller's context:
+
+| Variable | Value | Replaces |
+|---|---|---|
+| `RUNNER_CI` | JSON array of runner labels, e.g. `["ubuntu-latest"]` | `[self-hosted, ci]` |
+| `RUNNER_LARGE` | JSON array of runner labels, e.g. `["ubuntu-latest"]` | `[self-hosted, large]` |
+
+Unset (the default) means the fleet. This is the switch for a fleet outage: set
+both variables to `["ubuntu-latest"]` to run on GitHub-hosted runners, delete
+them to return to the fleet; nothing is merged in either direction. A value that
+is not a non-empty JSON array of strings fails the run with an explicit error
+instead of queueing forever. `runs-on-override` (self-test only) still takes
+precedence over both.
+
+GitHub-hosted runners differ from the fleet in two ways that matter here: about
+14 GB of free disk, so a large image may need a prune before its build, and no
+instance profile, so AWS is reached through OIDC only, which is what every
+workflow here already does.
+
 ## Onboarding a service repository
 
 1. An org owner installs the runners GitHub App (`mincaai-actions-runners`, id
@@ -382,6 +410,7 @@ tasks:
 | Variable | `DELIVERY_ECR_REGISTRY` | `<account>.dkr.ecr.<region>.amazonaws.com` | private repositories |
 | Variable | `DELIVERY_ECR_ROLE_ARN` | the `delivery-ecr-push` role | private repositories |
 | Variable | `DELIVERY_AWS_REGION` | `us-east-1` (the default when unset) | private repositories |
+| Variable (optional) | `RUNNER_CI`, `RUNNER_LARGE` | JSON runner labels replacing the fleet pools (1.4.0+); see "Runner pools" | repositories leaving the fleet |
 | Secret | `MINCA_CI_APP_ID` | mincaai-ci GitHub App id (installed on the deploy repos with Contents + Pull requests write) | repositories that promote |
 | Secret | `MINCA_CI_APP_PRIVATE_KEY` | mincaai-ci GitHub App private key | repositories that promote |
 | Secret (optional) | `MINCA_CI_APP_ID`, `MINCA_CI_APP_PRIVATE_KEY` | App that can read `minca-quality-hooks` | repositories that run guards |
