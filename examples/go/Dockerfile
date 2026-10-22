@@ -1,7 +1,7 @@
 # Fixture image: static binary on distroless, numeric non-root user.
 # GREETING_NAME has no default on purpose: the self-test passes it through
 # image.yml's build-args input, so a build that does not forward it fails here.
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26.10-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 RUN go mod download
