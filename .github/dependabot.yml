@@ -15,3 +15,15 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # Keeps the example base images on the current patch release, so copies of
+  # the examples do not inherit an unpatched Node, Go or Python.
+  - package-ecosystem: docker
+    directories:
+      - /examples/*
+    schedule:
+      interval: weekly
+    groups:
+      docker-base-images:
+        applies-to: version-updates
+        patterns: ["*"]

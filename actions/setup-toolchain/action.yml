@@ -103,6 +103,9 @@ runs:
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ inputs.version }}
+        # Resolve the newest patch of the requested line instead of whatever the runner
+        # image caches, so a security release is picked up before the image is rebaked.
+        check-latest: true
         node-version-file: ${{ inputs.version == '' && format('{0}/.nvmrc', inputs.working-directory) || '' }}
         cache: npm
         cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
