@@ -47,7 +47,7 @@ runs:
     # Python toolchains resolve Poetry and Python the same way on every runner.
     - name: Install uv
       if: startsWith(inputs.toolchain, 'python-')
-      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       with:
         working-directory: ${{ inputs.working-directory }}
         python-version: ${{ inputs.version }}
@@ -56,7 +56,7 @@ runs:
 
     - name: Install Python for Poetry
       if: inputs.toolchain == 'python-poetry'
-      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: ${{ inputs.version }}
         python-version-file: ${{ inputs.version == '' && format('{0}/.python-version', inputs.working-directory) || '' }}
@@ -100,7 +100,7 @@ runs:
 
     - name: Install Node
       if: inputs.toolchain == 'node'
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: ${{ inputs.version }}
         node-version-file: ${{ inputs.version == '' && format('{0}/.nvmrc', inputs.working-directory) || '' }}
