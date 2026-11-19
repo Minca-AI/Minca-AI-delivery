@@ -12,11 +12,11 @@ description: >-
 
 inputs:
   app-id:
-    description: GitHub App ID (not a secret; the caller's PRIVATE_DEPS_APP_ID variable). Empty skips the App path
+    description: GitHub App ID (the MINCA_CI_APP_ID secret). Empty skips the App path
     required: false
     default: ""
   private-key:
-    description: The App's private key (the caller's PRIVATE_DEPS_APP_PRIVATE_KEY secret). Empty skips the App path
+    description: The App's private key (the MINCA_CI_APP_PRIVATE_KEY secret). Empty skips the App path
     required: false
     default: ""
   repositories:

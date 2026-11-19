@@ -108,11 +108,9 @@ names it in `private-deps-repositories`. The workflow then mints a short-lived G
 installation token for exactly those repositories, read-only, and revokes it when the job ends.
 Nothing is stored and nothing is rotated by hand.
 
-One-time setup per organization and per caller repository:
-
-1. The CI GitHub App is installed on the private repository (Contents: read).
-2. The caller has the variable `PRIVATE_DEPS_APP_ID` and the secret `PRIVATE_DEPS_APP_PRIVATE_KEY`
-   (an organization variable and secret restricted to the repositories that need them works too).
+One-time setup: the CI GitHub App (the one behind `MINCA_CI_APP_ID` and `MINCA_CI_APP_PRIVATE_KEY`,
+already used by `quality-guards.yml` and `promote.yml`) is installed on the private repository
+with Contents: read. Callers already have those two secrets; nothing new is created.
 
 ```yaml
 jobs:
@@ -121,8 +119,7 @@ jobs:
     with:
       toolchain: python-poetry
       private-deps-repositories: minca-ai-resilience
-    secrets:
-      PRIVATE_DEPS_APP_PRIVATE_KEY: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+    secrets: inherit
 ```
 
 The `private-deps` action then exports git configuration through environment variables so
