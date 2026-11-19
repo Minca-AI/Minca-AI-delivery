@@ -48,9 +48,16 @@ on:
         description: For this repository's self-test only. JSON runner labels replacing the pool
         type: string
         default: ""
+      private-deps-repositories:
+        description: "Comma-separated private Minca-AI repositories the job must read (1.5.0+), for example minca-ai-resilience. With the caller's PRIVATE_DEPS_APP_ID variable and PRIVATE_DEPS_APP_PRIVATE_KEY secret set, a read-only App token scoped to exactly these is minted for the job"
+        type: string
+        default: ""
     secrets:
+      PRIVATE_DEPS_APP_PRIVATE_KEY:
+        description: Optional. Private key of the GitHub App that mints the private-dependency token (1.5.0+)
+        required: false
       PRIVATE_DEPS_TOKEN:
-        description: Optional. Read token for private Minca-AI repositories that `task setup` installs (1.5.0+)
+        description: Optional fallback when no App is configured. A ready-made read token (1.5.0+)
         required: false
 
 permissions:
@@ -138,6 +145,9 @@ jobs:
         name: Allow git to fetch private Minca-AI repositories
         uses: ./delivery/actions/private-deps
         with:
+          app-id: ${{ vars.PRIVATE_DEPS_APP_ID }}
+          private-key: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+          repositories: ${{ inputs.private-deps-repositories }}
           token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
       - &task-setup
         name: task setup

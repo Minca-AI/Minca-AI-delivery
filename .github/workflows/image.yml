@@ -67,9 +67,16 @@ on:
         description: For this repository's self-test only. JSON runner labels replacing the pool
         type: string
         default: ""
+      private-deps-repositories:
+        description: "Comma-separated private Minca-AI repositories the job must read (1.5.0+), for example minca-ai-resilience. With the caller's PRIVATE_DEPS_APP_ID variable and PRIVATE_DEPS_APP_PRIVATE_KEY secret set, a read-only App token scoped to exactly these is minted for the job"
+        type: string
+        default: ""
     secrets:
+      PRIVATE_DEPS_APP_PRIVATE_KEY:
+        description: Optional. Private key of the GitHub App that mints the private-dependency token, given to the Docker build as the BuildKit secret `private_deps_token` (1.5.0+)
+        required: false
       PRIVATE_DEPS_TOKEN:
-        description: Optional. Read token for private Minca-AI repositories, given to the Docker build as the BuildKit secret `private_deps_token` (1.5.0+)
+        description: Optional fallback when no App is configured. A ready-made read token (1.5.0+)
         required: false
     outputs:
       image:
@@ -135,6 +142,16 @@ jobs:
           region: ${{ vars.DELIVERY_AWS_REGION || 'us-east-1' }}
           working-directory: repo/${{ inputs.working-directory }}
 
+      - name: Private dependency token
+        id: deps
+        uses: ./delivery/actions/private-deps
+        with:
+          app-id: ${{ vars.PRIVATE_DEPS_APP_ID }}
+          private-key: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
+          repositories: ${{ inputs.private-deps-repositories }}
+          token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+          configure-git: "false"
+
       - name: Install go-task
         if: inputs.smoke
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
@@ -161,5 +178,5 @@ jobs:
           push: ${{ steps.plan.outputs.push }}
           platforms: ${{ inputs.platforms }}
           build-args: ${{ inputs.build-args }}
-          private-deps-token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+          private-deps-token: ${{ steps.deps.outputs.token }}
           taskfiles-dir: ${{ github.workspace }}/delivery/taskfiles

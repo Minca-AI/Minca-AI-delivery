@@ -104,7 +104,15 @@ No outputs. One job per target, so a pull request shows which check failed.
 
 A repository whose `task setup` installs a private Minca-AI repository (for example
 `minca-ai-resilience`, pinned as `git+https://github.com/Minca-AI/minca-ai-resilience@vX.Y.Z`)
-passes an optional secret:
+names it in `private-deps-repositories`. The workflow then mints a short-lived GitHub App
+installation token for exactly those repositories, read-only, and revokes it when the job ends.
+Nothing is stored and nothing is rotated by hand.
+
+One-time setup per organization and per caller repository:
+
+1. The CI GitHub App is installed on the private repository (Contents: read).
+2. The caller has the variable `PRIVATE_DEPS_APP_ID` and the secret `PRIVATE_DEPS_APP_PRIVATE_KEY`
+   (an organization variable and secret restricted to the repositories that need them works too).
 
 ```yaml
 jobs:
@@ -112,17 +120,18 @@ jobs:
     uses: Minca-AI/Minca-AI-delivery/.github/workflows/ci.yml@v1
     with:
       toolchain: python-poetry
+      private-deps-repositories: minca-ai-resilience
     secrets:
-      PRIVATE_DEPS_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+      PRIVATE_DEPS_APP_PRIVATE_KEY: ${{ secrets.PRIVATE_DEPS_APP_PRIVATE_KEY }}
 ```
 
-The `private-deps` action exports git configuration through environment variables so
-`https://github.com/Minca-AI/` is fetched with the token for the rest of the job. Nothing
-is written to `~/.gitconfig` or to the checkout, so a self-hosted runner keeps no
-credential afterwards. With the secret unset (every pull request from a fork) the step
-does nothing and behaviour is unchanged. The token needs read access (Contents: read) to
-the private repositories only; prefer a GitHub App installation token or a fine-grained
-token scoped to those repositories.
+The `private-deps` action then exports git configuration through environment variables so
+`https://github.com/Minca-AI/` is fetched with the token for the rest of the job. Nothing is
+written to `~/.gitconfig` or to the checkout, so a self-hosted runner keeps no credential
+afterwards. `private-deps-repositories` is required whenever the App path is used, so a token is
+never installation-wide. With nothing configured (every pull request from a fork) the step does
+nothing and behaviour is unchanged. A ready-made read token in the secret `PRIVATE_DEPS_TOKEN` is
+accepted as a fallback when no App is configured.
 
 ### `quality-guards.yml`
 
@@ -184,9 +193,9 @@ Comments are not supported.
 
 #### Private dependencies in the image build (v1.5.0+)
 
-`image.yml` takes the same optional `PRIVATE_DEPS_TOKEN` secret. It reaches the Docker
-build as the BuildKit secret `private_deps_token`, never as a build argument, so it is not
-recorded in the image history or layers. The Dockerfile reads it in the install step only:
+`image.yml` takes the same `private-deps-repositories` input and secrets. The minted token
+reaches the Docker build as the BuildKit secret `private_deps_token`, never as a build argument,
+so it is not recorded in the image history or layers. The Dockerfile reads it in the install step only:
 
 ```dockerfile
 RUN --mount=type=secret,id=private_deps_token     git config --global url."https://x-access-token:$(cat /run/secrets/private_deps_token)@github.com/Minca-AI/".insteadOf "https://github.com/Minca-AI/"     && pip install --no-cache-dir -r requirements.txt     ; rc=$?; rm -f ~/.gitconfig; exit $rc
@@ -275,7 +284,7 @@ request); retries a lost race up to 5 times with rebase; in `commit` mode moves
 | `ecr-login` | `role-arn`, `region` | OIDC assume-role and `docker login` to ECR; output `registry` |
 | `pre-build` | `script`, `role-arn`, `region`, `working-directory` | Validate and run one script before the build, with an optional step-scoped OIDC session (no session on pull requests) |
 | `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `working-directory`, `smoke`, `push`, `platforms`, `build-args`, `private-deps-token`, `taskfiles-dir` | Build and load, `task image:smoke`, push the same image; output `digest` |
-| `private-deps` | `token` | Let git fetch private Minca-AI repositories for the rest of the job (environment only, no file written); no-op with an empty token |
+| `private-deps` | `app-id`, `private-key`, `repositories`, `token`, `configure-git` | Mint a scoped read-only App token (or take a ready-made one) and let git fetch private Minca-AI repositories for the rest of the job (environment only, no file written); output `token`; no-op when nothing is configured |
 | `bump-pin` | `repo`, `path`, `service`, `tag`, `digest`, `mode`, `token` | Edit `pins.yaml`, commit or open a PR, retry loop |
 
 A repository whose needs the workflows do not cover uses these directly:
