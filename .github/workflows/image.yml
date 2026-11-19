@@ -67,6 +67,10 @@ on:
         description: For this repository's self-test only. JSON runner labels replacing the pool
         type: string
         default: ""
+    secrets:
+      PRIVATE_DEPS_TOKEN:
+        description: Optional. Read token for private Minca-AI repositories, given to the Docker build as the BuildKit secret `private_deps_token` (1.5.0+)
+        required: false
     outputs:
       image:
         description: Image repository, e.g. <registry>/minca/<name>
@@ -157,4 +161,5 @@ jobs:
           push: ${{ steps.plan.outputs.push }}
           platforms: ${{ inputs.platforms }}
           build-args: ${{ inputs.build-args }}
+          private-deps-token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
           taskfiles-dir: ${{ github.workspace }}/delivery/taskfiles

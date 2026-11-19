@@ -48,6 +48,10 @@ on:
         description: For this repository's self-test only. JSON runner labels replacing the pool
         type: string
         default: ""
+    secrets:
+      PRIVATE_DEPS_TOKEN:
+        description: Optional. Read token for private Minca-AI repositories that `task setup` installs (1.5.0+)
+        required: false
 
 permissions:
   contents: read
@@ -130,6 +134,11 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
           version: ${{ inputs.toolchain-version }}
           working-directory: repo/${{ inputs.working-directory }}
+      - &private-deps
+        name: Allow git to fetch private Minca-AI repositories
+        uses: ./delivery/actions/private-deps
+        with:
+          token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
       - &task-setup
         name: task setup
         working-directory: repo/${{ inputs.working-directory }}
@@ -154,6 +163,7 @@ jobs:
       - *checkout-repo
       - *checkout-delivery
       - *setup
+      - *private-deps
       - *task-setup
       - name: task test:integration
         working-directory: repo/${{ inputs.working-directory }}

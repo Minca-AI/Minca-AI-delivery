@@ -100,6 +100,30 @@ same locally and in CI.
 
 No outputs. One job per target, so a pull request shows which check failed.
 
+#### Private dependencies (v1.5.0+)
+
+A repository whose `task setup` installs a private Minca-AI repository (for example
+`minca-ai-resilience`, pinned as `git+https://github.com/Minca-AI/minca-ai-resilience@vX.Y.Z`)
+passes an optional secret:
+
+```yaml
+jobs:
+  ci:
+    uses: Minca-AI/Minca-AI-delivery/.github/workflows/ci.yml@v1
+    with:
+      toolchain: python-poetry
+    secrets:
+      PRIVATE_DEPS_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
+```
+
+The `private-deps` action exports git configuration through environment variables so
+`https://github.com/Minca-AI/` is fetched with the token for the rest of the job. Nothing
+is written to `~/.gitconfig` or to the checkout, so a self-hosted runner keeps no
+credential afterwards. With the secret unset (every pull request from a fork) the step
+does nothing and behaviour is unchanged. The token needs read access (Contents: read) to
+the private repositories only; prefer a GitHub App installation token or a fine-grained
+token scoped to those repositories.
+
 ### `quality-guards.yml`
 
 Runs the [minca-quality-hooks](https://github.com/Minca-AI/minca-quality-hooks)
@@ -157,6 +181,20 @@ start with `BUILDKIT_` or contain `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
 may be empty and may contain `=`, commas and inner spaces, but not a double quote
 or leading/trailing whitespace (the build action's list parser would rewrite it).
 Comments are not supported.
+
+#### Private dependencies in the image build (v1.5.0+)
+
+`image.yml` takes the same optional `PRIVATE_DEPS_TOKEN` secret. It reaches the Docker
+build as the BuildKit secret `private_deps_token`, never as a build argument, so it is not
+recorded in the image history or layers. The Dockerfile reads it in the install step only:
+
+```dockerfile
+RUN --mount=type=secret,id=private_deps_token     git config --global url."https://x-access-token:$(cat /run/secrets/private_deps_token)@github.com/Minca-AI/".insteadOf "https://github.com/Minca-AI/"     && pip install --no-cache-dir -r requirements.txt     ; rc=$?; rm -f ~/.gitconfig; exit $rc
+```
+
+The `~/.gitconfig` is removed in the same `RUN`, so it never lands in a layer. Build
+arguments stay free of secrets: `validate-build-args.sh` still refuses names containing
+`TOKEN`.
 
 #### Pre-build (v1.3.0+)
 
@@ -236,7 +274,8 @@ request); retries a lost race up to 5 times with rebase; in `commit` mode moves
 | `setup-toolchain` | `toolchain`, `version`, `working-directory` | uv / Poetry / Go / Node plus go-task, with caching |
 | `ecr-login` | `role-arn`, `region` | OIDC assume-role and `docker login` to ECR; output `registry` |
 | `pre-build` | `script`, `role-arn`, `region`, `working-directory` | Validate and run one script before the build, with an optional step-scoped OIDC session (no session on pull requests) |
-| `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `working-directory`, `smoke`, `push`, `platforms`, `build-args`, `taskfiles-dir` | Build and load, `task image:smoke`, push the same image; output `digest` |
+| `build-smoke-push` | `image`, `tag`, `dockerfile`, `context`, `working-directory`, `smoke`, `push`, `platforms`, `build-args`, `private-deps-token`, `taskfiles-dir` | Build and load, `task image:smoke`, push the same image; output `digest` |
+| `private-deps` | `token` | Let git fetch private Minca-AI repositories for the rest of the job (environment only, no file written); no-op with an empty token |
 | `bump-pin` | `repo`, `path`, `service`, `tag`, `digest`, `mode`, `token` | Edit `pins.yaml`, commit or open a PR, retry loop |
 
 A repository whose needs the workflows do not cover uses these directly:

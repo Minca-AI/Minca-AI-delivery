@@ -40,6 +40,10 @@ inputs:
     description: "Newline-separated NAME=value build arguments for the Docker build. NOT for secrets: they are recorded in the image history. Checked by validate-build-args.sh"
     required: false
     default: ""
+  private-deps-token:
+    description: "Optional read token for private repositories, passed to the build as the BuildKit secret private_deps_token (never a build arg, so it is not recorded in the image history). The Dockerfile reads it with RUN --mount=type=secret,id=private_deps_token"
+    required: false
+    default: ""
   taskfiles-dir:
     description: Absolute path exported as DELIVERY_TASKFILES for the consumer Taskfile
     required: false
@@ -78,6 +82,7 @@ runs:
         file: ${{ inputs.working-directory }}/${{ inputs.dockerfile }}
         platforms: ${{ inputs.platforms }}
         build-args: ${{ inputs.build-args }}
+        secrets: ${{ inputs.private-deps-token != '' && format('private_deps_token={0}', inputs.private-deps-token) || '' }}
         tags: ${{ inputs.image }}:${{ inputs.tag }}
         load: true
         push: false

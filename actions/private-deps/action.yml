@@ -1,0 +1,22 @@
+name: private-deps
+description: >-
+  Let git fetch private Minca-AI repositories (for example the minca-ai-resilience
+  library) during `task setup`. The token is exported as git configuration through
+  environment variables only: nothing is written to ~/.gitconfig or to the checkout,
+  so a self-hosted runner keeps no credential after the job. With an empty token the
+  action does nothing, which is what a pull request from a fork gets.
+
+inputs:
+  token:
+    description: Token with read access to the private repositories. Empty means no-op
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git for private Minca-AI repositories
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/configure.sh"
