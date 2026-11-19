@@ -48,6 +48,20 @@ on:
         description: For this repository's self-test only. JSON runner labels replacing the pool
         type: string
         default: ""
+      private-deps-repositories:
+        description: "Comma-separated private Minca-AI repositories the job must read (1.5.0+), for example minca-ai-resilience. With the organization's MINCA_CI_APP_ID and MINCA_CI_APP_PRIVATE_KEY secrets passed (secrets: inherit), a read-only App token scoped to exactly these is minted for the job"
+        type: string
+        default: ""
+    secrets:
+      MINCA_CI_APP_ID:
+        description: Optional. ID of the CI GitHub App that mints the private-dependency token (1.5.0+); same secret as quality-guards and promote
+        required: false
+      MINCA_CI_APP_PRIVATE_KEY:
+        description: Optional. Private key of the CI GitHub App (1.5.0+)
+        required: false
+      PRIVATE_DEPS_TOKEN:
+        description: Optional fallback when no App is configured. A ready-made read token (1.5.0+)
+        required: false
 
 permissions:
   contents: read
@@ -130,6 +144,14 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
           version: ${{ inputs.toolchain-version }}
           working-directory: repo/${{ inputs.working-directory }}
+      - &private-deps
+        name: Allow git to fetch private Minca-AI repositories
+        uses: ./delivery/actions/private-deps
+        with:
+          app-id: ${{ secrets.MINCA_CI_APP_ID }}
+          private-key: ${{ secrets.MINCA_CI_APP_PRIVATE_KEY }}
+          repositories: ${{ inputs.private-deps-repositories }}
+          token: ${{ secrets.PRIVATE_DEPS_TOKEN }}
       - &task-setup
         name: task setup
         working-directory: repo/${{ inputs.working-directory }}
@@ -154,6 +176,7 @@ jobs:
       - *checkout-repo
       - *checkout-delivery
       - *setup
+      - *private-deps
       - *task-setup
       - name: task test:integration
         working-directory: repo/${{ inputs.working-directory }}

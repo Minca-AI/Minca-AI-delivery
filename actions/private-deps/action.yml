@@ -1,0 +1,66 @@
+name: private-deps
+description: >-
+  Give a job read access to private Minca-AI repositories (for example the minca-ai-resilience
+  library). The preferred source is the GitHub App: with app-id and private-key it mints a short-lived
+  installation token scoped to the named repositories and read-only contents, revoked when the job ends,
+  so nothing is stored or rotated. A ready-made token is the fallback. With neither, the action does
+  nothing, which is what a pull request from a fork gets.
+
+  By default the token is exported as git configuration through environment variables only: nothing is
+  written to ~/.gitconfig or to the checkout, so a self-hosted runner keeps no credential after the job.
+  An image build sets configure-git to false and passes the output token to Docker as a BuildKit secret.
+
+inputs:
+  app-id:
+    description: GitHub App ID (the MINCA_CI_APP_ID secret). Empty skips the App path
+    required: false
+    default: ""
+  private-key:
+    description: The App's private key (the MINCA_CI_APP_PRIVATE_KEY secret). Empty skips the App path
+    required: false
+    default: ""
+  repositories:
+    description: Comma-separated names of the repositories (in the caller's organization) the App token may read. Required with the App path, so the token is never installation-wide
+    required: false
+    default: ""
+  token:
+    description: A ready-made read token, the fallback. Used only when the App path is not configured
+    required: false
+    default: ""
+  configure-git:
+    description: "true: rewrite https://github.com/Minca-AI/ for git in this job. false: only expose the token as the output"
+    required: false
+    default: "true"
+
+outputs:
+  token:
+    description: The token in use (masked); empty when none was configured
+    value: ${{ steps.app.outputs.token || inputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require a repository list for the App path
+      if: inputs.app-id != '' && inputs.private-key != '' && inputs.repositories == ''
+      shell: bash
+      run: |
+        echo "::error::private-deps: set repositories so the App token is scoped, never installation-wide"
+        exit 1
+
+    - name: Mint a scoped, read-only App installation token
+      id: app
+      if: inputs.app-id != '' && inputs.private-key != '' && inputs.repositories != ''
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ inputs.repositories }}
+        permission-contents: read
+
+    - name: Configure git for private Minca-AI repositories
+      if: inputs.configure-git == 'true'
+      shell: bash
+      env:
+        TOKEN: ${{ steps.app.outputs.token || inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/configure.sh"
